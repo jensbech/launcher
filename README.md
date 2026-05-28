@@ -1,8 +1,10 @@
 # Launcher
 
-A minimal Spotlight-style macOS app launcher. ⌘Space opens a frosted search
+A minimal Spotlight-style macOS app launcher for apps only. ⌘Space opens a frosted search
 panel that fuzzy-searches your apps. Every installed app is searchable by
 default; disable the ones you don't want in Settings. Runs as a menu bar agent.
+
+![Launcher search panel showing fuzzy matches with highlighted letters](docs/screenshot.png)
 
 This app is fully vibe coded.
 
