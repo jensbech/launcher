@@ -1,0 +1,28 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5B8CFF"/>
+      <stop offset="0.5" stop-color="#7C5CFF"/>
+      <stop offset="1" stop-color="#C45CFF"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.3" cy="0.22" r="0.9">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.38"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="80" y="80" width="864" height="864" rx="200" ry="200" fill="url(#bg)"/>
+  <rect x="80" y="80" width="864" height="864" rx="200" ry="200" fill="url(#sheen)"/>
+
+  <g fill="none" stroke-linecap="round">
+    <g stroke="#1A1040" stroke-opacity="0.20" stroke-width="62" transform="translate(0,12)">
+      <circle cx="455" cy="452" r="168"/>
+      <line x1="585" y1="582" x2="712" y2="709"/>
+    </g>
+    <g stroke="#FFFFFF" stroke-width="62">
+      <circle cx="455" cy="452" r="168"/>
+      <line x1="585" y1="582" x2="712" y2="709"/>
+    </g>
+  </g>
+</svg>
