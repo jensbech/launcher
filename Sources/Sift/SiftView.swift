@@ -1,9 +1,9 @@
 import SwiftUI
 import AppKit
-import LauncherCore
+import SiftCore
 
 @MainActor
-final class LauncherViewModel: ObservableObject {
+final class SiftViewModel: ObservableObject {
     @Published var query: String = ""
     @Published var results: [AppItem] = []
     @Published var selectedIndex: Int = 0
@@ -72,8 +72,8 @@ final class LauncherViewModel: ObservableObject {
     func escape() { onEscape?() }
 }
 
-struct LauncherView: View {
-    @ObservedObject var viewModel: LauncherViewModel
+struct SiftView: View {
+    @ObservedObject var viewModel: SiftViewModel
 
     var body: some View {
         VStack(spacing: 0) {

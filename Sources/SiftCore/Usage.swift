@@ -38,7 +38,7 @@ public final class UsageStore {
 
     public static var defaultURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Launcher/usage.json")
+        return base.appendingPathComponent("Sift/usage.json")
     }
 
     public func load() -> UsageStats {

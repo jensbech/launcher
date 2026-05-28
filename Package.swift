@@ -2,21 +2,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "Launcher",
+    name: "Sift",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "LauncherCore"),
+        .target(name: "SiftCore"),
         .executableTarget(
-            name: "Launcher",
-            dependencies: ["LauncherCore"],
+            name: "Sift",
+            dependencies: ["SiftCore"],
             linkerSettings: [
                 .linkedFramework("Carbon"),
                 .linkedFramework("ServiceManagement")
             ]
         ),
         .testTarget(
-            name: "LauncherCoreTests",
-            dependencies: ["LauncherCore"]
+            name: "SiftCoreTests",
+            dependencies: ["SiftCore"]
         ),
     ]
 )

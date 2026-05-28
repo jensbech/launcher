@@ -17,7 +17,7 @@ final class HotkeyManager {
                             &eventSpec,
                             selfPtr,
                             &handlerRef)
-        if installStatus != noErr { NSLog("Launcher: InstallEventHandler failed (\(installStatus))") }
+        if installStatus != noErr { NSLog("Sift: InstallEventHandler failed (\(installStatus))") }
 
         let hotKeyID = EventHotKeyID(signature: fourCharCode("LNCH"), id: 1)
         let registerStatus = RegisterEventHotKey(UInt32(kVK_Space),
@@ -26,7 +26,7 @@ final class HotkeyManager {
                             GetApplicationEventTarget(),
                             0,
                             &hotKeyRef)
-        if registerStatus != noErr { NSLog("Launcher: RegisterEventHotKey failed (\(registerStatus)) — is Cmd-Space still bound to Spotlight?") }
+        if registerStatus != noErr { NSLog("Sift: RegisterEventHotKey failed (\(registerStatus)) — is Cmd-Space still bound to Spotlight?") }
     }
 
     func fire() { onTrigger?() }

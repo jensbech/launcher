@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import LauncherCore
+import SiftCore
 
 @MainActor
 final class SettingsViewModel: ObservableObject {

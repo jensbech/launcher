@@ -1,15 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_NAME="Launcher"
-BUNDLE_ID="com.local.launcher"
+APP_NAME="Sift"
+BUNDLE_ID="com.local.sift"
 BUILD_DIR=".build/release"
 APP_BUNDLE="build/${APP_NAME}.app"
 CONTENTS="${APP_BUNDLE}/Contents"
 
 swift build -c release
 
-if [ ! -f Resources/Launcher.icns ]; then
+if [ ! -f Resources/Sift.icns ]; then
     ./scripts/make-icon.sh
 fi
 
@@ -18,7 +18,7 @@ mkdir -p "${CONTENTS}/MacOS"
 mkdir -p "${CONTENTS}/Resources"
 
 cp "${BUILD_DIR}/${APP_NAME}" "${CONTENTS}/MacOS/${APP_NAME}"
-cp Resources/Launcher.icns "${CONTENTS}/Resources/Launcher.icns"
+cp Resources/Sift.icns "${CONTENTS}/Resources/Sift.icns"
 
 cat > "${CONTENTS}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -32,7 +32,7 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleExecutable</key><string>${APP_NAME}</string>
-    <key>CFBundleIconFile</key><string>Launcher</string>
+    <key>CFBundleIconFile</key><string>Sift</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>

@@ -1,4 +1,4 @@
-# Launcher — Design Spec
+# Sift — Design Spec
 
 **Date:** 2026-05-27
 **Status:** Approved
@@ -53,7 +53,7 @@ Environment: Swift 6.2.3, macOS 26.5, **Command Line Tools only (no full Xcode)*
    icon with *Settings…* and *Quit* menu items.
 2. **HotkeyManager** — registers ⌘Space via `RegisterEventHotKey`; toggles the
    launcher panel show/hide.
-3. **LauncherPanel** — borderless, non-activating `NSPanel`
+3. **SiftPanel** — borderless, non-activating `NSPanel`
    (`.nonactivatingPanel`, `level = .floating`), centered horizontally in the
    upper third of the main screen. `NSVisualEffectView` frosted dark background,
    rounded corners, soft shadow. Hosts the SwiftUI search view. Dismisses on
@@ -70,7 +70,7 @@ Environment: Swift 6.2.3, macOS 26.5, **Command Line Tools only (no full Xcode)*
    filter box and a toggle per app. Includes a **Launch at login** toggle.
    Changes persist immediately.
 7. **Store** — persists enabled app set (by bundle ID) + prefs as JSON in
-   `~/Library/Application Support/Launcher/config.json`. Human-inspectable.
+   `~/Library/Application Support/Sift/config.json`. Human-inspectable.
 8. **Build script** — assembles the `.app`: writes `Info.plist` (with
    `LSUIElement`), copies the SwiftPM binary into `Contents/MacOS`, sets up
    `Contents/Resources`, ad-hoc signs the bundle.
@@ -79,7 +79,7 @@ Environment: Swift 6.2.3, macOS 26.5, **Command Line Tools only (no full Xcode)*
 
 ```
 ⌘Space
-  → HotkeyManager toggles LauncherPanel
+  → HotkeyManager toggles SiftPanel
   → panel appears with empty field, focused
   → user types
   → FuzzyMatcher filters enabled AppIndex

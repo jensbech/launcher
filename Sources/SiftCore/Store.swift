@@ -19,7 +19,7 @@ public final class Store {
 
     public static var defaultURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Launcher/config.json")
+        return base.appendingPathComponent("Sift/config.json")
     }
 
     public func load() -> Config {

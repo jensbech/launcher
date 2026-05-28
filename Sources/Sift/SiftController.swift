@@ -1,16 +1,16 @@
 import AppKit
 import SwiftUI
-import LauncherCore
+import SiftCore
 
 @MainActor
-final class LauncherController {
+final class SiftController {
     private let store: Store
-    private var panel: LauncherPanel?
-    private let viewModel: LauncherViewModel
+    private var panel: SiftPanel?
+    private let viewModel: SiftViewModel
 
     init(store: Store) {
         self.store = store
-        self.viewModel = LauncherViewModel(store: store)
+        self.viewModel = SiftViewModel(store: store)
         viewModel.onLaunch = { [weak self] item in self?.launch(item) }
         viewModel.onEscape = { [weak self] in self?.hide() }
     }
@@ -44,13 +44,13 @@ final class LauncherController {
         NSWorkspace.shared.open(item.url)
     }
 
-    private func makePanel() -> LauncherPanel {
-        let panel = LauncherPanel(rootView: LauncherView(viewModel: viewModel))
+    private func makePanel() -> SiftPanel {
+        let panel = SiftPanel(rootView: SiftView(viewModel: viewModel))
         panel.onResignKey = { [weak self] in self?.hide() }
         return panel
     }
 
-    private func positionPanel(_ panel: LauncherPanel) {
+    private func positionPanel(_ panel: SiftPanel) {
         guard let screen = activeScreen() else { return }
         let visible = screen.visibleFrame
         let topY = visible.minY + visible.height * 0.80

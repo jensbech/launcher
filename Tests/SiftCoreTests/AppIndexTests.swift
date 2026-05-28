@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import LauncherCore
+@testable import SiftCore
 
 final class AppIndexTests {
     let root: URL

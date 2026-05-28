@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import LauncherCore
+@testable import SiftCore
 
 struct StoreTests {
     private func tempURL() -> URL {

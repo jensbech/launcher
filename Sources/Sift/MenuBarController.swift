@@ -13,7 +13,7 @@ final class MenuBarController: NSObject {
 
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "magnifyingglass",
-                                   accessibilityDescription: "Launcher")
+                                   accessibilityDescription: "Sift")
         }
 
         let menu = NSMenu()
@@ -21,7 +21,7 @@ final class MenuBarController: NSObject {
         settingsItem.target = self
         menu.addItem(settingsItem)
         menu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "Quit Launcher", action: #selector(quitAction), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Sift", action: #selector(quitAction), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
         statusItem.menu = menu

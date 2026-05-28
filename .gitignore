@@ -1,6 +1,6 @@
 .build/
 .swiftpm/
 build/
-Resources/Launcher.icns
+Resources/Sift.icns
 .DS_Store
 .superpowers/

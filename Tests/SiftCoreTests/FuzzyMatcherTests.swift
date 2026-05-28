@@ -1,5 +1,5 @@
 import Testing
-@testable import LauncherCore
+@testable import SiftCore
 
 struct FuzzyMatcherTests {
     private func items(_ names: [String]) -> [AppItem] {

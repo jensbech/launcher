@@ -1,10 +1,10 @@
-# Launcher
+# Sift
 
 A minimal Spotlight-style macOS app launcher for apps only. ⌘Space opens a frosted search
 panel that fuzzy-searches your apps. Every installed app is searchable by
 default; disable the ones you don't want in Settings. Runs as a menu bar agent.
 
-![Launcher search panel showing fuzzy matches with highlighted letters](docs/screenshot.png)
+![Sift search panel showing fuzzy matches with highlighted letters](docs/screenshot.png)
 
 This app is fully vibe coded.
 
@@ -17,14 +17,14 @@ This app is fully vibe coded.
 
 ```bash
 ./scripts/build-app.sh
-open build/Launcher.app
+open build/Sift.app
 ```
 
 ## First-run setup
 
-macOS uses ⌘Space for Spotlight by default. To let Launcher own ⌘Space, open
+macOS uses ⌘Space for Spotlight by default. To let Sift own ⌘Space, open
 **System Settings → Keyboard → Keyboard Shortcuts → Spotlight** and turn off
-"Show Spotlight search" (or change its shortcut). Launcher shows a reminder on
+"Show Spotlight search" (or change its shortcut). Sift shows a reminder on
 first launch.
 
 ## Usage
@@ -40,7 +40,7 @@ first launch.
 The icon is generated from `Resources/AppIcon.svg`:
 
 ```bash
-./scripts/make-icon.sh   # rebuilds Resources/Launcher.icns from the SVG
+./scripts/make-icon.sh   # rebuilds Resources/Sift.icns from the SVG
 ```
 
 `build-app.sh` regenerates it automatically if missing.
@@ -48,12 +48,12 @@ The icon is generated from `Resources/AppIcon.svg`:
 ## Configuration
 
 Preferences (the set of *disabled* apps + launch-at-login) are stored at
-`~/Library/Application Support/Launcher/config.json`. An empty/missing file
+`~/Library/Application Support/Sift/config.json`. An empty/missing file
 means every app is searchable.
 
 ## Development
 
 ```bash
-./scripts/test.sh   # run LauncherCore unit tests
-swift run Launcher  # run unbundled (launch-at-login needs the bundled .app)
+./scripts/test.sh   # run SiftCore unit tests
+swift run Sift  # run unbundled (launch-at-login needs the bundled .app)
 ```

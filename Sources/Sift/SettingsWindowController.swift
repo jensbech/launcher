@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import LauncherCore
+import SiftCore
 
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
@@ -16,7 +16,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         if window == nil {
             let hosting = NSHostingController(rootView: SettingsView(viewModel: SettingsViewModel(store: self.store)))
             let win = NSWindow(contentViewController: hosting)
-            win.title = "Launcher Settings"
+            win.title = "Sift Settings"
             win.styleMask = [.titled, .closable]
             win.isReleasedWhenClosed = false
             win.delegate = self
