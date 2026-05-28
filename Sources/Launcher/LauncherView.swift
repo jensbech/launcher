@@ -120,7 +120,7 @@ struct LauncherView: View {
         .background(
             ZStack {
                 VisualEffectBackground()
-                Color.black.opacity(0.22)
+                Color.black.opacity(0.40)
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -156,7 +156,7 @@ struct ResultRow: View {
                 piece.foregroundColor = .primary
             } else {
                 piece.font = .system(size: 16, weight: .regular)
-                piece.foregroundColor = .primary.opacity(0.75)
+                piece.foregroundColor = .primary.opacity(0.85)
             }
             result += piece
         }
