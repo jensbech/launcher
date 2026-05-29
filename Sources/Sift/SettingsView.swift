@@ -11,22 +11,32 @@ final class SettingsViewModel: ObservableObject {
     @Published var panelPosition: PanelPosition = .topCenter
     @Published var backdropEnabled: Bool = false
     @Published var backdropIntensity: Double = Config.defaultBackdropIntensity
+    @Published var psychedelicEnabled: Bool = false
+    @Published var psychedelicIntensity: Double = Config.defaultPsychedelicIntensity
     @Published var includeZenBookmarks: Bool = true
     @Published var managedBookmarks: [Bookmark] = []
+    @Published var launcherHotkey: Hotkey = .defaultLauncher
+    @Published var bookmarksHotkey: Hotkey = .defaultBookmarks
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
+    private let onHotkeysChanged: () -> Void
 
-    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore()) {
+    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore(), onHotkeysChanged: @escaping () -> Void = {}) {
         self.store = store
         self.bookmarkStore = bookmarkStore
+        self.onHotkeysChanged = onHotkeysChanged
         let config = store.load()
         self.disabled = config.disabledBundleIDs
         self.launchAtLogin = config.launchAtLogin
         self.panelPosition = config.panelPosition
         self.backdropEnabled = config.backdropEnabled
         self.backdropIntensity = config.backdropIntensity
+        self.psychedelicEnabled = config.psychedelicEnabled
+        self.psychedelicIntensity = config.psychedelicIntensity
         self.includeZenBookmarks = config.includeZenBookmarks
+        self.launcherHotkey = config.launcherHotkey
+        self.bookmarksHotkey = config.bookmarksHotkey
         self.managedBookmarks = bookmarkStore.load()
         self.apps = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
     }
@@ -35,6 +45,8 @@ final class SettingsViewModel: ObservableObject {
         guard !filter.isEmpty else { return apps }
         return apps.filter { $0.name.localizedCaseInsensitiveContains(filter) }
     }
+
+    var enabledCount: Int { apps.count - disabled.filter { id in apps.contains { $0.id == id } }.count }
 
     func isEnabled(_ item: AppItem) -> Bool { !disabled.contains(item.id) }
 
@@ -68,9 +80,38 @@ final class SettingsViewModel: ObservableObject {
         persist()
     }
 
+    func setPsychedelicEnabled(_ value: Bool) {
+        psychedelicEnabled = value
+        persist()
+    }
+
+    func setPsychedelicIntensity(_ value: Double) {
+        psychedelicIntensity = max(0, min(1, value))
+        persist()
+    }
+
     func setIncludeZenBookmarks(_ value: Bool) {
         includeZenBookmarks = value
         persist()
+    }
+
+    func setLauncherHotkey(_ value: Hotkey) {
+        launcherHotkey = value
+        persist()
+        onHotkeysChanged()
+    }
+
+    func setBookmarksHotkey(_ value: Hotkey) {
+        bookmarksHotkey = value
+        persist()
+        onHotkeysChanged()
+    }
+
+    func resetHotkeys() {
+        launcherHotkey = .defaultLauncher
+        bookmarksHotkey = .defaultBookmarks
+        persist()
+        onHotkeysChanged()
     }
 
     func addBookmark(name: String, url: String) {
@@ -94,7 +135,11 @@ final class SettingsViewModel: ObservableObject {
             panelPosition: panelPosition,
             backdropEnabled: backdropEnabled,
             backdropIntensity: backdropIntensity,
-            includeZenBookmarks: includeZenBookmarks
+            psychedelicEnabled: psychedelicEnabled,
+            psychedelicIntensity: psychedelicIntensity,
+            includeZenBookmarks: includeZenBookmarks,
+            launcherHotkey: launcherHotkey,
+            bookmarksHotkey: bookmarksHotkey
         ))
     }
 
@@ -103,116 +148,511 @@ final class SettingsViewModel: ObservableObject {
     }
 }
 
-struct SettingsView: View {
-    @StateObject var viewModel: SettingsViewModel
+private enum SettingsSection: Int, CaseIterable, Identifiable {
+    case apps, bookmarks, position, shortcuts, general
 
-    var body: some View {
-        TabView {
-            AppsTab(viewModel: viewModel)
-                .tabItem { Label("Apps", systemImage: "square.grid.2x2") }
-            BookmarksTab(viewModel: viewModel)
-                .tabItem { Label("Bookmarks", systemImage: "bookmark") }
-            PositionTab(viewModel: viewModel)
-                .tabItem { Label("Position", systemImage: "rectangle.3.group") }
-            GeneralTab(viewModel: viewModel)
-                .tabItem { Label("General", systemImage: "gearshape") }
+    var id: Int { rawValue }
+
+    var index: String { String(format: "%02d", rawValue + 1) }
+
+    var title: String {
+        switch self {
+        case .apps: return "Apps"
+        case .bookmarks: return "Bookmarks"
+        case .position: return "Position"
+        case .shortcuts: return "Shortcuts"
+        case .general: return "General"
         }
-        .frame(width: 480, height: 580)
+    }
+
+    var subtitle: String {
+        switch self {
+        case .apps: return "Choose which apps are searchable from the launcher."
+        case .bookmarks: return "Pin URLs and merge browser bookmarks into Sift."
+        case .position: return "Pick where the launcher panel appears on screen."
+        case .shortcuts: return "Rebind the global hotkeys that summon Sift."
+        case .general: return "Behavior, startup, and the optional backdrop."
+        }
     }
 }
 
-private struct AppsTab: View {
+private enum Palette {
+    static let surface = Color.black.opacity(0.18)
+    static let card = Color.white.opacity(0.045)
+    static let cardStroke = Color.white.opacity(0.07)
+    static let hairline = Color.white.opacity(0.08)
+    static let subtle = Color.white.opacity(0.55)
+    static let muted = Color.white.opacity(0.42)
+    static let dim = Color.white.opacity(0.28)
+}
+
+struct SettingsView: View {
+    @StateObject var viewModel: SettingsViewModel
+    @State private var section: SettingsSection = .apps
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Sidebar(section: $section, viewModel: viewModel)
+                .frame(width: 220)
+
+            Rectangle()
+                .fill(Palette.hairline)
+                .frame(width: 1)
+
+            ContentPane(section: section, viewModel: viewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(width: 820, height: 640)
+        .background(SettingsBackdrop())
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct SettingsBackdrop: View {
+    var body: some View {
+        ZStack {
+            VisualEffectBackground()
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.55),
+                    Color.black.opacity(0.30)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            RadialGradient(
+                colors: [Color.accentColor.opacity(0.18), .clear],
+                center: .topLeading,
+                startRadius: 10,
+                endRadius: 520
+            )
+            .blendMode(.plusLighter)
+            .opacity(0.55)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct Sidebar: View {
+    @Binding var section: SettingsSection
     @ObservedObject var viewModel: SettingsViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Searchable Apps").font(.headline)
-            TextField("Filter", text: $viewModel.filter)
-                .textFieldStyle(.roundedBorder)
-            List {
-                ForEach(viewModel.filtered) { item in
-                    Toggle(isOn: Binding(
-                        get: { viewModel.isEnabled(item) },
-                        set: { _ in viewModel.toggle(item) }
-                    )) {
-                        HStack(spacing: 8) {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
-                                .resizable()
-                                .frame(width: 20, height: 20)
-                            Text(item.name)
+        VStack(alignment: .leading, spacing: 0) {
+            BrandHeader()
+                .padding(.horizontal, 22)
+                .padding(.top, 34)
+                .padding(.bottom, 26)
+
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(SettingsSection.allCases) { item in
+                    SidebarRow(
+                        item: item,
+                        selected: section == item,
+                        onSelect: { section = item }
+                    )
+                }
+            }
+            .padding(.horizontal, 12)
+
+            Spacer()
+
+            Footer(viewModel: viewModel)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 22)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct BrandHeader: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: Color.accentColor.opacity(0.7), radius: 4)
+                Text("SIFT")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .tracking(2.4)
+                    .foregroundStyle(.white)
+            }
+            Text("Settings")
+                .font(.system(size: 26, weight: .semibold, design: .serif))
+                .foregroundStyle(.white.opacity(0.95))
+                .italic()
+        }
+    }
+}
+
+private struct SidebarRow: View {
+    let item: SettingsSection
+    let selected: Bool
+    let onSelect: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 14) {
+                Rectangle()
+                    .fill(selected ? Color.accentColor : Color.clear)
+                    .frame(width: 2, height: 18)
+
+                Text(item.index)
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .tracking(0.6)
+                    .foregroundStyle(selected ? Color.accentColor : Palette.muted)
+                    .frame(width: 22, alignment: .leading)
+
+                Text(item.title)
+                    .font(.system(size: 13.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? .white : Palette.subtle)
+
+                Spacer()
+            }
+            .padding(.vertical, 9)
+            .padding(.trailing, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(selected ? Color.white.opacity(0.05) : (hover ? Color.white.opacity(0.03) : .clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .animation(.easeOut(duration: 0.12), value: hover)
+        .animation(.easeOut(duration: 0.18), value: selected)
+    }
+}
+
+private struct Footer: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Rectangle()
+                .fill(Palette.hairline)
+                .frame(height: 1)
+                .padding(.bottom, 14)
+
+            HStack(spacing: 6) {
+                Image(systemName: "command")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("Space")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .tracking(0.5)
+            }
+            .foregroundStyle(Palette.subtle)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .stroke(Palette.hairline, lineWidth: 1)
+            )
+
+            Text("Opens the launcher.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Palette.dim)
+        }
+    }
+}
+
+private struct ContentPane: View {
+    let section: SettingsSection
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaneHeader(section: section)
+                .padding(.horizontal, 36)
+                .padding(.top, 38)
+                .padding(.bottom, 22)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    switch section {
+                    case .apps: AppsPane(viewModel: viewModel)
+                    case .bookmarks: BookmarksPane(viewModel: viewModel)
+                    case .position: PositionPane(viewModel: viewModel)
+                    case .shortcuts: ShortcutsPane(viewModel: viewModel)
+                    case .general: GeneralPane(viewModel: viewModel)
+                    }
+                }
+                .padding(.horizontal, 36)
+                .padding(.bottom, 32)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .id(section)
+        .transition(.opacity)
+        .animation(.easeOut(duration: 0.18), value: section)
+    }
+}
+
+private struct PaneHeader: View {
+    let section: SettingsSection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text(section.index)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .tracking(1.6)
+                    .foregroundStyle(Color.accentColor)
+                Rectangle()
+                    .fill(Palette.hairline)
+                    .frame(width: 28, height: 1)
+                Text(section.title.uppercased())
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .tracking(2.8)
+                    .foregroundStyle(Palette.muted)
+            }
+
+            Text(section.title)
+                .font(.system(size: 30, weight: .semibold, design: .serif))
+                .foregroundStyle(.white)
+
+            Text(section.subtitle)
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.subtle)
+        }
+    }
+}
+
+private struct Card<Content: View>: View {
+    var title: String? = nil
+    var caption: String? = nil
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let title {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .tracking(2.0)
+                        .foregroundStyle(Palette.muted)
+                    if let caption {
+                        Rectangle()
+                            .fill(Palette.hairline)
+                            .frame(height: 1)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 4)
+                        Text(caption)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Palette.dim)
+                    }
+                }
+            }
+            content()
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Palette.card)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Palette.cardStroke, lineWidth: 1)
+        )
+    }
+}
+
+private struct ToggleRow: View {
+    let title: String
+    let description: String?
+    @Binding var isOn: Bool
+
+    init(title: String, description: String? = nil, isOn: Binding<Bool>) {
+        self.title = title
+        self.description = description
+        self._isOn = isOn
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(.white)
+                if let description {
+                    Text(description)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Palette.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 12)
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .controlSize(.small)
+        }
+    }
+}
+
+private struct AppsPane: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Card(title: "FILTER", caption: "\(viewModel.filtered.count) of \(viewModel.apps.count)") {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                    TextField("Type to filter applications", text: $viewModel.filter)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white)
+                    if !viewModel.filter.isEmpty {
+                        Button {
+                            viewModel.filter = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Palette.muted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.black.opacity(0.25))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Palette.hairline, lineWidth: 1)
+                )
+            }
+
+            Card(title: "SEARCHABLE") {
+                if viewModel.filtered.isEmpty {
+                    EmptyState(icon: "magnifyingglass", text: "No matches.")
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(viewModel.filtered.enumerated()), id: \.element.id) { idx, item in
+                            AppRow(item: item, viewModel: viewModel)
+                            if idx < viewModel.filtered.count - 1 {
+                                Rectangle()
+                                    .fill(Palette.hairline)
+                                    .frame(height: 1)
+                                    .padding(.leading, 44)
+                            }
                         }
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
         }
-        .padding(20)
     }
 }
 
-private struct BookmarksTab: View {
+private struct AppRow: View {
+    let item: AppItem
+    @ObservedObject var viewModel: SettingsViewModel
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+                .resizable()
+                .frame(width: 22, height: 22)
+            Text(item.name)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(viewModel.isEnabled(item) ? 0.95 : 0.45))
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { viewModel.isEnabled(item) },
+                set: { _ in viewModel.toggle(item) }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.mini)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(hover ? Color.white.opacity(0.03) : .clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+    }
+}
+
+private struct BookmarksPane: View {
     @ObservedObject var viewModel: SettingsViewModel
     @State private var newName: String = ""
     @State private var newURL: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Bookmarks").font(.headline)
-
-            Toggle("Include Zen bookmarks", isOn: Binding(
-                get: { viewModel.includeZenBookmarks },
-                set: { viewModel.setIncludeZenBookmarks($0) }
-            ))
-            Text("Imports bookmarks from your Zen browser profile and merges them with the list below. Open with ⇧⌘Space.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Divider().padding(.vertical, 2)
-
-            Text("Custom Bookmarks").font(.subheadline).bold()
-
-            HStack(spacing: 6) {
-                TextField("Name", text: $newName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 140)
-                TextField("https://example.com", text: $newURL)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(addBookmark)
-                Button("Add", action: addBookmark)
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty ||
-                              newURL.trimmingCharacters(in: .whitespaces).isEmpty)
+        VStack(alignment: .leading, spacing: 16) {
+            Card(title: "BROWSER") {
+                ToggleRow(
+                    title: "Include Zen bookmarks",
+                    description: "Imports bookmarks from your Zen browser profile and merges them with the list below. Open with ⇧⌘Space.",
+                    isOn: Binding(
+                        get: { viewModel.includeZenBookmarks },
+                        set: { viewModel.setIncludeZenBookmarks($0) }
+                    )
+                )
             }
 
-            if viewModel.managedBookmarks.isEmpty {
-                Text("No custom bookmarks yet. Add one above.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
-            } else {
-                List {
-                    ForEach(viewModel.managedBookmarks) { bookmark in
-                        HStack(spacing: 10) {
-                            Image(systemName: "globe")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(bookmark.name).font(.callout)
-                                Text(bookmark.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Card(title: "CUSTOM", caption: "\(viewModel.managedBookmarks.count) saved") {
+                VStack(spacing: 12) {
+                    HStack(spacing: 8) {
+                        BookmarkField(placeholder: "Name", text: $newName, width: 130)
+                        BookmarkField(placeholder: "https://example.com", text: $newURL, width: nil, onSubmit: addBookmark)
+                        Button(action: addBookmark) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("Add")
+                                    .font(.system(size: 12, weight: .medium))
                             }
-                            Spacer()
-                            Button {
-                                viewModel.removeBookmark(id: bookmark.id)
-                            } label: {
-                                Image(systemName: "trash")
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(addDisabled ? Color.white.opacity(0.06) : Color.accentColor)
+                            )
+                            .opacity(addDisabled ? 0.55 : 1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(addDisabled)
+                    }
+
+                    if viewModel.managedBookmarks.isEmpty {
+                        EmptyState(icon: "bookmark", text: "No custom bookmarks yet. Add one above.")
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(viewModel.managedBookmarks.enumerated()), id: \.element.id) { idx, bookmark in
+                                SettingsBookmarkRow(bookmark: bookmark) {
+                                    viewModel.removeBookmark(id: bookmark.id)
+                                }
+                                if idx < viewModel.managedBookmarks.count - 1 {
+                                    Rectangle()
+                                        .fill(Palette.hairline)
+                                        .frame(height: 1)
+                                        .padding(.leading, 34)
+                                }
                             }
-                            .buttonStyle(.borderless)
-                            .help("Remove")
                         }
                     }
                 }
             }
         }
-        .padding(20)
+    }
+
+    private var addDisabled: Bool {
+        newName.trimmingCharacters(in: .whitespaces).isEmpty ||
+        newURL.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private func addBookmark() {
@@ -222,91 +662,341 @@ private struct BookmarksTab: View {
     }
 }
 
-private struct GeneralTab: View {
-    @ObservedObject var viewModel: SettingsViewModel
+private struct BookmarkField: View {
+    let placeholder: String
+    @Binding var text: String
+    let width: CGFloat?
+    var onSubmit: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("General").font(.headline)
-            Toggle("Launch at login", isOn: Binding(
-                get: { viewModel.launchAtLogin },
-                set: { viewModel.setLaunchAtLogin($0) }
-            ))
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Blur and dim background when open", isOn: Binding(
-                    get: { viewModel.backdropEnabled },
-                    set: { viewModel.setBackdropEnabled($0) }
-                ))
-                Text("Adds a frosted, slightly darkened overlay across the rest of the screen while Sift is visible.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 10) {
-                    Text("Intensity")
-                        .font(.callout)
-                        .foregroundStyle(viewModel.backdropEnabled ? .primary : .secondary)
-                        .frame(width: 70, alignment: .leading)
-                    Image(systemName: "circle.dotted")
-                        .foregroundStyle(.secondary)
-                    Slider(
-                        value: Binding(
-                            get: { viewModel.backdropIntensity },
-                            set: { viewModel.setBackdropIntensity($0) }
-                        ),
-                        in: 0...1
-                    )
-                    Image(systemName: "circle.fill")
-                        .foregroundStyle(.secondary)
-                    Text("\(Int(viewModel.backdropIntensity * 100))%")
-                        .monospacedDigit()
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 38, alignment: .trailing)
-                }
-                .disabled(!viewModel.backdropEnabled)
-                .padding(.top, 4)
-            }
-            Spacer()
-        }
-        .padding(20)
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.black.opacity(0.25))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Palette.hairline, lineWidth: 1)
+            )
+            .frame(maxWidth: width)
+            .onSubmit { onSubmit?() }
     }
 }
 
-private struct PositionTab: View {
+private struct SettingsBookmarkRow: View {
+    let bookmark: Bookmark
+    let onRemove: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .frame(width: 22, height: 22)
+                Image(systemName: "globe")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.subtle)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(bookmark.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.95))
+                Text(bookmark.url)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            Button(action: onRemove) {
+                Image(systemName: "trash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(hover ? Color.red.opacity(0.95) : Palette.muted)
+                    .padding(7)
+                    .background(
+                        Circle().fill(hover ? Color.red.opacity(0.12) : Color.clear)
+                    )
+            }
+            .buttonStyle(.plain)
+            .onHover { hover = $0 }
+            .help("Remove")
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+    }
+}
+
+private struct EmptyState: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.dim)
+            Text(text)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Palette.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.vertical, 18)
+    }
+}
+
+private struct GeneralPane: View {
     @ObservedObject var viewModel: SettingsViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Panel Position").font(.headline)
-            Text("Choose where Sift appears on your screen.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-
-            PositionPicker(
-                selection: Binding(
-                    get: { viewModel.panelPosition },
-                    set: { viewModel.setPanelPosition($0) }
+            Card(title: "STARTUP") {
+                ToggleRow(
+                    title: "Launch at login",
+                    description: "Sift starts silently in the menu bar when you log in.",
+                    isOn: Binding(
+                        get: { viewModel.launchAtLogin },
+                        set: { viewModel.setLaunchAtLogin($0) }
+                    )
                 )
-            )
-            .frame(maxWidth: .infinity)
-
-            HStack(spacing: 6) {
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                Text(label(for: viewModel.panelPosition))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer()
             }
 
-            Spacer()
-        }
-        .padding(20)
-    }
+            Card(title: "BACKDROP") {
+                VStack(alignment: .leading, spacing: 14) {
+                    ToggleRow(
+                        title: "Blur and dim the desktop",
+                        description: "Adds a frosted, slightly darkened overlay across the rest of the screen while Sift is visible.",
+                        isOn: Binding(
+                            get: { viewModel.backdropEnabled },
+                            set: { viewModel.setBackdropEnabled($0) }
+                        )
+                    )
 
-    private func label(for position: PanelPosition) -> String {
-        positionLabel(position)
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+
+                    IntensityRow(viewModel: viewModel)
+                        .opacity(viewModel.backdropEnabled ? 1 : 0.45)
+                        .disabled(!viewModel.backdropEnabled)
+
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+
+                    PsychedelicToggleRow(viewModel: viewModel)
+                        .opacity(viewModel.backdropEnabled ? 1 : 0.45)
+                        .disabled(!viewModel.backdropEnabled)
+
+                    PsychedelicIntensityRow(viewModel: viewModel)
+                        .opacity(viewModel.backdropEnabled && viewModel.psychedelicEnabled ? 1 : 0.45)
+                        .disabled(!viewModel.backdropEnabled || !viewModel.psychedelicEnabled)
+                }
+            }
+        }
+    }
+}
+
+private struct PsychedelicToggleRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            PsychedelicPreviewChip()
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Psychedelic mode")
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(.white)
+                    Text("RANDOM")
+                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                        .tracking(1.0)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(
+                                    colors: [Color(red: 1, green: 0.4, blue: 0.7), Color(red: 0.5, green: 0.9, blue: 1)],
+                                    startPoint: .leading, endPoint: .trailing
+                                )
+                            )
+                        )
+                }
+                Text("Each time Sift opens, a different trip plays across the backdrop — waves, plasma, aurora, starfield, matrix, tunnel, spirograph, lightning, CRT, vortex, confetti, grid floor, phyllotaxis, pixel sort, fireflies, sunburst, EKG, bouncing balls, sonar, or hex cells.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Toggle("", isOn: Binding(
+                get: { viewModel.psychedelicEnabled },
+                set: { viewModel.setPsychedelicEnabled($0) }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+        }
+    }
+}
+
+private struct PsychedelicIntensityRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("PSYCHEDELIC INTENSITY")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .tracking(2.0)
+                    .foregroundStyle(Palette.muted)
+                Spacer()
+                Text("\(Int(viewModel.psychedelicIntensity * 100))%")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                    )
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.dim)
+                Slider(
+                    value: Binding(
+                        get: { viewModel.psychedelicIntensity },
+                        set: { viewModel.setPsychedelicIntensity($0) }
+                    ),
+                    in: 0...1
+                )
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.subtle)
+            }
+        }
+    }
+}
+
+private struct PsychedelicPreviewChip: View {
+    private static let lineCount = 7
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            ZStack {
+                Color.black
+                Canvas { gc, size in
+                    for i in 0..<Self.lineCount {
+                        var path = Path()
+                        let baseY = (Double(i) + 0.5) / Double(Self.lineCount) * size.height
+                        let phase = t * (0.6 + Double(i % 3) * 0.3) + Double(i) * 0.7
+                        let amp = size.height * 0.08
+                        let steps = 36
+                        for s in 0...steps {
+                            let u = Double(s) / Double(steps)
+                            let x = size.width * u
+                            let y = baseY + sin(u * 4 * .pi + phase) * amp + sin(u * 8 * .pi - phase * 0.6) * amp * 0.35
+                            if s == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                            else { path.addLine(to: CGPoint(x: x, y: y)) }
+                        }
+                        let hue = ((Double(i) / Double(Self.lineCount)) + t * 0.1).truncatingRemainder(dividingBy: 1)
+                        let color = Color(hue: hue, saturation: 0.9, brightness: 1.0)
+                        gc.stroke(path, with: .color(color.opacity(0.9)), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                    }
+                }
+                .blendMode(.plusLighter)
+            }
+            .saturation(1.3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct IntensityRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("INTENSITY")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .tracking(2.0)
+                    .foregroundStyle(Palette.muted)
+                Spacer()
+                Text("\(Int(viewModel.backdropIntensity * 100))%")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                    )
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: "circle.dotted")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.dim)
+                Slider(
+                    value: Binding(
+                        get: { viewModel.backdropIntensity },
+                        set: { viewModel.setBackdropIntensity($0) }
+                    ),
+                    in: 0...1
+                )
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.subtle)
+            }
+        }
+    }
+}
+
+private struct PositionPane: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Card(title: "ANCHOR", caption: positionLabel(viewModel.panelPosition).uppercased()) {
+                PositionPicker(
+                    selection: Binding(
+                        get: { viewModel.panelPosition },
+                        set: { viewModel.setPanelPosition($0) }
+                    )
+                )
+                .frame(maxWidth: .infinity)
+            }
+
+            Card(title: "HINT") {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.top, 1)
+                    Text("Sift will appear at this anchor on whichever screen your cursor lives. The 7×7 grid lets you fine-tune corners as well as edges.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 }
 
@@ -323,7 +1013,7 @@ private struct PositionPicker: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let panelWidth = size.width * 0.42
+            let panelWidth = size.width * 0.40
             let panelHeight: CGFloat = 22
 
             ZStack {
@@ -331,17 +1021,19 @@ private struct PositionPicker: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(nsColor: .controlBackgroundColor).opacity(0.9),
-                                Color(nsColor: .windowBackgroundColor).opacity(0.6)
+                                Color.white.opacity(0.06),
+                                Color.white.opacity(0.02)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                    )
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Palette.hairline, lineWidth: 1)
+
+                ScreenGuides()
+                    .stroke(Color.white.opacity(0.05), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                    .padding(14)
 
                 MenuBarMock()
                     .frame(height: 10)
@@ -363,9 +1055,9 @@ private struct PositionPicker: View {
     }
 
     private func panelCenter(for position: PanelPosition, in size: CGSize, panelWidth: CGFloat, panelHeight: CGFloat) -> CGPoint {
-        let insetX: CGFloat = 14
-        let topInset: CGFloat = 18
-        let bottomInset: CGFloat = 14
+        let insetX: CGFloat = 16
+        let topInset: CGFloat = 20
+        let bottomInset: CGFloat = 16
 
         let leftX = insetX + panelWidth / 2
         let rightX = size.width - insetX - panelWidth / 2
@@ -379,15 +1071,32 @@ private struct PositionPicker: View {
     }
 }
 
+private struct ScreenGuides: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let third = rect.width / 3
+        p.move(to: CGPoint(x: rect.minX + third, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX + third, y: rect.maxY))
+        p.move(to: CGPoint(x: rect.minX + third * 2, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.minX + third * 2, y: rect.maxY))
+        let thirdH = rect.height / 3
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + thirdH))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + thirdH))
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + thirdH * 2))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + thirdH * 2))
+        return p
+    }
+}
+
 private struct MenuBarMock: View {
     var body: some View {
         HStack(spacing: 4) {
-            Circle().fill(Color.primary.opacity(0.18)).frame(width: 4, height: 4)
-            Circle().fill(Color.primary.opacity(0.18)).frame(width: 4, height: 4)
+            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
             Spacer()
-            Circle().fill(Color.primary.opacity(0.18)).frame(width: 4, height: 4)
-            Circle().fill(Color.primary.opacity(0.18)).frame(width: 4, height: 4)
-            Circle().fill(Color.primary.opacity(0.18)).frame(width: 4, height: 4)
+            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
         }
         .padding(.horizontal, 8)
     }
@@ -402,22 +1111,22 @@ private struct MiniSiftPanel: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1.5)
+                    .strokeBorder(Color.accentColor.opacity(0.95), lineWidth: 1.5)
             )
             .overlay(
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 7, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.7))
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.primary.opacity(0.15))
+                        .fill(Color.white.opacity(0.22))
                         .frame(height: 4)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 6)
             )
             .frame(width: width, height: height)
-            .shadow(color: Color.accentColor.opacity(0.35), radius: 6, x: 0, y: 2)
+            .shadow(color: Color.accentColor.opacity(0.45), radius: 8, x: 0, y: 2)
     }
 }
 
@@ -430,25 +1139,257 @@ private struct GridButtons: View {
                 HStack(spacing: 0) {
                     ForEach(0..<PanelPosition.gridSize, id: \.self) { col in
                         let position = PanelPosition(row: row, column: col)
-                        Button {
+                        GridDot(position: position, selected: selection == position) {
                             selection = position
-                        } label: {
-                            ZStack {
-                                Color.clear
-                                Circle()
-                                    .fill(selection == position ? Color.accentColor : Color.primary.opacity(0.22))
-                                    .frame(width: selection == position ? 6 : 3,
-                                           height: selection == position ? 6 : 3)
-                                    .animation(.easeOut(duration: 0.15), value: selection)
-                            }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .help(positionLabel(position))
                     }
                 }
             }
         }
-        .padding(8)
+        .padding(10)
+    }
+}
+
+private struct GridDot: View {
+    let position: PanelPosition
+    let selected: Bool
+    let onSelect: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            ZStack {
+                Color.clear
+                Circle()
+                    .fill(selected ? Color.accentColor : (hover ? Color.white.opacity(0.55) : Color.white.opacity(0.22)))
+                    .frame(width: selected ? 7 : (hover ? 5 : 3),
+                           height: selected ? 7 : (hover ? 5 : 3))
+                    .shadow(color: selected ? Color.accentColor.opacity(0.6) : .clear, radius: 4)
+                    .animation(.easeOut(duration: 0.14), value: selected)
+                    .animation(.easeOut(duration: 0.12), value: hover)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .help(positionLabel(position))
+    }
+}
+
+private struct ShortcutsPane: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Card(title: "GLOBAL", caption: "Press a combination with at least one modifier") {
+                VStack(spacing: 14) {
+                    ShortcutRow(
+                        label: "Open launcher",
+                        sublabel: "Toggles the app search panel.",
+                        binding: Binding(
+                            get: { viewModel.launcherHotkey },
+                            set: { viewModel.setLauncherHotkey($0) }
+                        )
+                    )
+
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+
+                    ShortcutRow(
+                        label: "Open bookmarks",
+                        sublabel: "Toggles the bookmark search panel.",
+                        binding: Binding(
+                            get: { viewModel.bookmarksHotkey },
+                            set: { viewModel.setBookmarksHotkey($0) }
+                        )
+                    )
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button {
+                    viewModel.resetHotkeys()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Reset to defaults")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.white.opacity(0.05))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Card(title: "NOTE") {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.orange.opacity(0.8))
+                        .padding(.top, 1)
+                    Text("If a combination is already claimed by macOS (like ⌘Space for Spotlight) the registration will silently fail. Free the shortcut in System Settings → Keyboard, or choose another combination here.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+private struct ShortcutRow: View {
+    let label: String
+    let sublabel: String
+    @Binding var binding: Hotkey
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(.white)
+                Text(sublabel)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Palette.subtle)
+            }
+            Spacer(minLength: 12)
+            KeyRecorder(hotkey: $binding)
+        }
+    }
+}
+
+private struct KeyRecorder: View {
+    @Binding var hotkey: Hotkey
+    @State private var recording = false
+
+    var body: some View {
+        ZStack {
+            KeyCaptureRepresentable(isRecording: $recording, hotkey: $hotkey)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+
+            Button(action: { recording.toggle() }) {
+                HStack(spacing: 8) {
+                    if recording {
+                        PulsingDot()
+                        Text("Press a key…")
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.accentColor)
+                    } else {
+                        Text(hotkey.displayString())
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .tracking(0.5)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minWidth: 138)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(recording ? Color.accentColor.opacity(0.14) : Color.black.opacity(0.28))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(recording ? Color.accentColor.opacity(0.85) : Palette.hairline, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct PulsingDot: View {
+    @State private var on = false
+
+    var body: some View {
+        Circle()
+            .fill(Color.accentColor)
+            .frame(width: 6, height: 6)
+            .opacity(on ? 1 : 0.4)
+            .shadow(color: Color.accentColor.opacity(0.8), radius: on ? 4 : 1)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                    on = true
+                }
+            }
+    }
+}
+
+private struct KeyCaptureRepresentable: NSViewRepresentable {
+    @Binding var isRecording: Bool
+    @Binding var hotkey: Hotkey
+
+    func makeNSView(context: Context) -> KeyCaptureView {
+        let view = KeyCaptureView()
+        view.onCapture = { code, mods in
+            self.hotkey = Hotkey(keyCode: code, modifiers: mods)
+            self.isRecording = false
+        }
+        view.onCancel = {
+            self.isRecording = false
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyCaptureView, context: Context) {
+        if isRecording {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        } else {
+            if nsView.window?.firstResponder === nsView {
+                DispatchQueue.main.async {
+                    nsView.window?.makeFirstResponder(nil)
+                }
+            }
+        }
+    }
+}
+
+private final class KeyCaptureView: NSView {
+    var onCapture: ((UInt32, UInt32) -> Void)?
+    var onCancel: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        let mods = carbonModifiers(from: event.modifierFlags)
+        if event.keyCode == 53 && mods == 0 {
+            onCancel?()
+            return
+        }
+        guard mods != 0 else {
+            NSSound.beep()
+            return
+        }
+        onCapture?(UInt32(event.keyCode), mods)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self else { return false }
+        keyDown(with: event)
+        return true
+    }
+
+    private func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var mods: UInt32 = 0
+        if flags.contains(.command) { mods |= Hotkey.cmdMask }
+        if flags.contains(.shift) { mods |= Hotkey.shiftMask }
+        if flags.contains(.option) { mods |= Hotkey.optionMask }
+        if flags.contains(.control) { mods |= Hotkey.controlMask }
+        return mods
     }
 }

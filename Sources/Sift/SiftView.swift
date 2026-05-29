@@ -135,7 +135,7 @@ struct SiftView: View {
         .background(
             ZStack {
                 VisualEffectBackground()
-                Color.black.opacity(0.40)
+                Color.black.opacity(0.62)
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

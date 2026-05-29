@@ -1,12 +1,18 @@
 import AppKit
+import SwiftUI
 
 final class BackdropWindow: NSWindow {
     private let visualView: NSVisualEffectView
     private let dimView: NSView
+    private var psychedelicHost: NSHostingView<PsychedelicView>?
     private(set) var intensity: Double
+    private(set) var psychedelic: Bool
+    private(set) var psychedelicIntensity: Double
 
-    init(screenFrame: NSRect, intensity: Double) {
+    init(screenFrame: NSRect, intensity: Double, psychedelic: Bool, psychedelicIntensity: Double) {
         self.intensity = max(0, min(1, intensity))
+        self.psychedelic = psychedelic
+        self.psychedelicIntensity = max(0, min(1, psychedelicIntensity))
 
         let bounds = NSRect(origin: .zero, size: screenFrame.size)
         let visual = NSVisualEffectView(frame: bounds)
@@ -38,11 +44,21 @@ final class BackdropWindow: NSWindow {
         contentView = visual
 
         applyIntensity()
+        if psychedelic { installPsychedelic(in: bounds) }
     }
 
     func setIntensity(_ value: Double) {
         intensity = max(0, min(1, value))
         applyIntensity()
+    }
+
+    private func installPsychedelic(in bounds: NSRect) {
+        let effect = PsychedelicEffect.random()
+        let host = NSHostingView(rootView: PsychedelicView(intensity: psychedelicIntensity, effect: effect))
+        host.frame = bounds
+        host.autoresizingMask = [.width, .height]
+        visualView.addSubview(host)
+        psychedelicHost = host
     }
 
     private func applyIntensity() {

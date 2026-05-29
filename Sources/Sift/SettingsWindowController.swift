@@ -7,20 +7,31 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let store: Store
     private let bookmarkStore: BookmarkStore
+    private let onHotkeysChanged: () -> Void
 
-    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore()) {
+    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore(), onHotkeysChanged: @escaping () -> Void = {}) {
         self.store = store
         self.bookmarkStore = bookmarkStore
+        self.onHotkeysChanged = onHotkeysChanged
         super.init()
     }
 
     func show() {
         if window == nil {
-            let viewModel = SettingsViewModel(store: self.store, bookmarkStore: self.bookmarkStore)
+            let viewModel = SettingsViewModel(
+                store: self.store,
+                bookmarkStore: self.bookmarkStore,
+                onHotkeysChanged: self.onHotkeysChanged
+            )
             let hosting = NSHostingController(rootView: SettingsView(viewModel: viewModel))
             let win = NSWindow(contentViewController: hosting)
             win.title = "Sift Settings"
-            win.styleMask = [.titled, .closable]
+            win.styleMask = [.titled, .closable, .fullSizeContentView]
+            win.titlebarAppearsTransparent = true
+            win.titleVisibility = .hidden
+            win.isMovableByWindowBackground = true
+            win.backgroundColor = .clear
+            win.appearance = NSAppearance(named: .darkAqua)
             win.isReleasedWhenClosed = false
             win.delegate = self
             window = win

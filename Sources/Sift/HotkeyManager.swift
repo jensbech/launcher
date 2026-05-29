@@ -11,11 +11,12 @@ final class HotkeyManager {
     }
 
     private var bindings: [UInt32: Binding] = [:]
-    private var hotKeyRefs: [EventHotKeyRef] = []
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var handlerRef: EventHandlerRef?
     private let signature: OSType = fourCharCode("LNCH")
 
     func register(_ binding: Binding) {
+        unregister(id: binding.id)
         bindings[binding.id] = binding
         installHandlerIfNeeded()
 
@@ -30,7 +31,14 @@ final class HotkeyManager {
         if status != noErr {
             NSLog("Sift: RegisterEventHotKey failed for \(binding.label) (\(status))")
         }
-        if let ref { hotKeyRefs.append(ref) }
+        if let ref { hotKeyRefs[binding.id] = ref }
+    }
+
+    func unregister(id: UInt32) {
+        if let ref = hotKeyRefs.removeValue(forKey: id) {
+            UnregisterEventHotKey(ref)
+        }
+        bindings.removeValue(forKey: id)
     }
 
     fileprivate func fire(id: UInt32) {
@@ -54,7 +62,7 @@ final class HotkeyManager {
     }
 
     deinit {
-        for ref in hotKeyRefs { UnregisterEventHotKey(ref) }
+        for ref in hotKeyRefs.values { UnregisterEventHotKey(ref) }
         if let handlerRef { RemoveEventHandler(handlerRef) }
     }
 }

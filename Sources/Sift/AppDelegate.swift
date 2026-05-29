@@ -2,39 +2,53 @@ import AppKit
 import Carbon.HIToolbox
 import SiftCore
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
     private var hotkeys: HotkeyManager!
     private var launcher: SiftController!
     private var bookmarks: BookmarkController!
     private var settings: SettingsWindowController!
+    private var store: Store!
+
+    private static let launcherHotkeyID: UInt32 = 1
+    private static let bookmarksHotkeyID: UInt32 = 2
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         DebugLog.reset()
         DebugLog.write("AppDelegate.didFinishLaunching")
-        let store = Store()
+        store = Store()
         let bookmarkStore = BookmarkStore()
         launcher = SiftController(store: store)
         bookmarks = BookmarkController(store: store, bookmarkStore: bookmarkStore)
-        settings = SettingsWindowController(store: store, bookmarkStore: bookmarkStore)
+        settings = SettingsWindowController(
+            store: store,
+            bookmarkStore: bookmarkStore,
+            onHotkeysChanged: { [weak self] in self?.rebindHotkeys() }
+        )
         menuBar = MenuBarController(
             onSettings: { [weak self] in self?.settings.show() },
             onQuit: { NSApp.terminate(nil) }
         )
         hotkeys = HotkeyManager()
+        rebindHotkeys()
+        showFirstRunHintIfNeeded()
+    }
+
+    private func rebindHotkeys() {
+        let config = store.load()
         hotkeys.register(.init(
-            keyCode: UInt32(kVK_Space),
-            modifiers: UInt32(cmdKey),
-            id: 1,
-            label: "Cmd-Space"
+            keyCode: config.launcherHotkey.keyCode,
+            modifiers: config.launcherHotkey.modifiers,
+            id: Self.launcherHotkeyID,
+            label: "Launcher (\(config.launcherHotkey.displayString()))"
         ) { [weak self] in self?.launcher.toggle() })
         hotkeys.register(.init(
-            keyCode: UInt32(kVK_Space),
-            modifiers: UInt32(cmdKey | shiftKey),
-            id: 2,
-            label: "Shift-Cmd-Space"
+            keyCode: config.bookmarksHotkey.keyCode,
+            modifiers: config.bookmarksHotkey.modifiers,
+            id: Self.bookmarksHotkeyID,
+            label: "Bookmarks (\(config.bookmarksHotkey.displayString()))"
         ) { [weak self] in self?.bookmarks.toggle() })
-        showFirstRunHintIfNeeded()
     }
 
     private func showFirstRunHintIfNeeded() {
@@ -44,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Free up ⌘Space"
-        alert.informativeText = "Sift uses ⌘Space (apps) and ⇧⌘Space (bookmarks). macOS assigns ⌘Space to Spotlight by default. Open System Settings → Keyboard → Keyboard Shortcuts → Spotlight and turn off \"Show Spotlight search\" (or change its shortcut) so Sift's shortcuts work."
+        alert.informativeText = "Sift uses ⌘Space (apps) and ⇧⌘Space (bookmarks) by default. macOS assigns ⌘Space to Spotlight. Open System Settings → Keyboard → Keyboard Shortcuts → Spotlight and turn off \"Show Spotlight search\" (or change its shortcut). You can also rebind Sift's shortcuts in Settings → Shortcuts."
         alert.addButton(withTitle: "Open Keyboard Settings")
         alert.addButton(withTitle: "Later")
         NSApp.setActivationPolicy(.regular)

@@ -26,9 +26,9 @@ enum PanelPlacement {
     }
 
     @MainActor
-    static func presentBackdrop(on screen: NSScreen, intensity: Double, existing: inout BackdropWindow?) {
+    static func presentBackdrop(on screen: NSScreen, intensity: Double, psychedelic: Bool, psychedelicIntensity: Double, existing: inout BackdropWindow?) {
         existing?.orderOut(nil)
-        let window = BackdropWindow(screenFrame: screen.frame, intensity: intensity)
+        let window = BackdropWindow(screenFrame: screen.frame, intensity: intensity, psychedelic: psychedelic, psychedelicIntensity: psychedelicIntensity)
         window.setFrame(screen.frame, display: false)
         window.orderFront(nil)
         NSAnimationContext.runAnimationGroup { context in
