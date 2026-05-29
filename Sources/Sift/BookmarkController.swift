@@ -13,6 +13,7 @@ final class BookmarkController {
         self.store = store
         self.viewModel = BookmarkViewModel(store: store, bookmarkStore: bookmarkStore)
         viewModel.onOpen = { [weak self] bookmark in self?.open(bookmark) }
+        viewModel.onOpenURL = { [weak self] urlString in self?.openURL(urlString) }
         viewModel.onEscape = { [weak self] in self?.hide() }
     }
 
@@ -46,8 +47,12 @@ final class BookmarkController {
     }
 
     private func open(_ bookmark: Bookmark) {
+        openURL(bookmark.url)
+    }
+
+    private func openURL(_ urlString: String) {
         hide()
-        guard let url = URL(string: bookmark.url) else { return }
+        guard let url = URL(string: urlString) else { return }
         NSWorkspace.shared.open(url)
     }
 

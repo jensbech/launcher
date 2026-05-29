@@ -6,6 +6,8 @@ final class KeyHandlingTextField: NSTextField {
     var onMoveDown: (() -> Void)?
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onMoveRight: (() -> Void)?
+    var onMoveLeft: (() -> Bool)?
 }
 
 struct SearchField: NSViewRepresentable {
@@ -15,6 +17,8 @@ struct SearchField: NSViewRepresentable {
     var onMoveDown: () -> Void
     var onSubmit: () -> Void
     var onCancel: () -> Void
+    var onMoveRight: (() -> Void)? = nil
+    var onMoveLeft: (() -> Bool)? = nil
 
     func makeNSView(context: Context) -> KeyHandlingTextField {
         DebugLog.write("SearchField.makeNSView")
@@ -31,11 +35,19 @@ struct SearchField: NSViewRepresentable {
         field.onMoveDown = onMoveDown
         field.onSubmit = onSubmit
         field.onCancel = onCancel
+        field.onMoveRight = onMoveRight
+        field.onMoveLeft = onMoveLeft
         return field
     }
 
     func updateNSView(_ nsView: KeyHandlingTextField, context: Context) {
         DebugLog.write("SearchField.updateNSView field='\(nsView.stringValue)' text='\(text)' focus=\(focusToken)")
+        nsView.onMoveUp = onMoveUp
+        nsView.onMoveDown = onMoveDown
+        nsView.onSubmit = onSubmit
+        nsView.onCancel = onCancel
+        nsView.onMoveRight = onMoveRight
+        nsView.onMoveLeft = onMoveLeft
         if nsView.stringValue != text { nsView.stringValue = text }
         if context.coordinator.lastFocusToken != focusToken {
             context.coordinator.lastFocusToken = focusToken
@@ -86,6 +98,19 @@ struct SearchField: NSViewRepresentable {
             case #selector(NSResponder.cancelOperation(_:)):
                 field.onCancel?()
                 return true
+            case #selector(NSResponder.moveRight(_:)):
+                let length = field.stringValue.count
+                let position = textView.selectedRange().location
+                if position >= length, field.onMoveRight != nil {
+                    field.onMoveRight?()
+                    return true
+                }
+                return false
+            case #selector(NSResponder.moveLeft(_:)):
+                if let handler = field.onMoveLeft, handler() {
+                    return true
+                }
+                return false
             default:
                 return false
             }

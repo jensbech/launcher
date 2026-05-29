@@ -12,13 +12,23 @@ final class BookmarkViewModel: ObservableObject {
         var id: String { bookmark.id }
     }
 
+    struct ActionsState: Equatable {
+        let source: Bookmark
+        let actions: [BookmarkAction]
+        var selectedIndex: Int
+    }
+
     @Published var query: String = ""
     @Published var results: [Result] = []
     @Published var selectedIndex: Int = 0
     @Published var focusToken: Int = 0
+    @Published var actionsState: ActionsState? = nil
 
     var onOpen: ((Bookmark) -> Void)?
+    var onOpenURL: ((String) -> Void)?
     var onEscape: (() -> Void)?
+
+    var isInActionsMode: Bool { actionsState != nil }
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
@@ -37,14 +47,32 @@ final class BookmarkViewModel: ObservableObject {
         query = ""
         results = []
         selectedIndex = 0
+        actionsState = nil
         focusToken &+= 1
         refreshIndex()
     }
 
     func updateQuery(_ value: String) {
         DebugLog.write("BookmarkVM.updateQuery in='\(value)' prevQuery='\(query)'")
+        if actionsState != nil { actionsState = nil }
         query = value
         runSearch()
+    }
+
+    func enterActions() {
+        guard actionsState == nil,
+              results.indices.contains(selectedIndex) else { return }
+        let bookmark = results[selectedIndex].bookmark
+        let actions = BookmarkActions.actions(for: bookmark)
+        guard !actions.isEmpty else { return }
+        actionsState = ActionsState(source: bookmark, actions: actions, selectedIndex: 0)
+    }
+
+    @discardableResult
+    func tryExitActions() -> Bool {
+        guard actionsState != nil else { return false }
+        actionsState = nil
+        return true
     }
 
     func runSearch() {
@@ -60,21 +88,41 @@ final class BookmarkViewModel: ObservableObject {
     }
 
     func moveDown() {
+        if var state = actionsState {
+            guard !state.actions.isEmpty else { return }
+            state.selectedIndex = min(state.selectedIndex + 1, state.actions.count - 1)
+            actionsState = state
+            return
+        }
         guard !results.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, results.count - 1)
     }
 
     func moveUp() {
+        if var state = actionsState {
+            guard !state.actions.isEmpty else { return }
+            state.selectedIndex = max(state.selectedIndex - 1, 0)
+            actionsState = state
+            return
+        }
         guard !results.isEmpty else { return }
         selectedIndex = max(selectedIndex - 1, 0)
     }
 
     func activateSelection() {
+        if let state = actionsState {
+            guard state.actions.indices.contains(state.selectedIndex) else { return }
+            onOpenURL?(state.actions[state.selectedIndex].url)
+            return
+        }
         guard results.indices.contains(selectedIndex) else { return }
         onOpen?(results[selectedIndex].bookmark)
     }
 
-    func escape() { onEscape?() }
+    func escape() {
+        if tryExitActions() { return }
+        onEscape?()
+    }
 
     private func refreshIndex() {
         let includeZen = store.load().includeZenBookmarks
@@ -127,13 +175,18 @@ struct BookmarkView: View {
                     onMoveUp: { viewModel.moveUp() },
                     onMoveDown: { viewModel.moveDown() },
                     onSubmit: { viewModel.activateSelection() },
-                    onCancel: { viewModel.escape() }
+                    onCancel: { viewModel.escape() },
+                    onMoveRight: { viewModel.enterActions() },
+                    onMoveLeft: { viewModel.tryExitActions() }
                 )
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 16)
 
-            if !viewModel.results.isEmpty {
+            if let state = viewModel.actionsState {
+                Divider()
+                BookmarkActionsList(state: state, viewModel: viewModel)
+            } else if !viewModel.results.isEmpty {
                 Divider()
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -145,7 +198,8 @@ struct BookmarkView: View {
                                     query: viewModel.query,
                                     selected: index == viewModel.selectedIndex,
                                     icon: faviconCache.icon(for: result.bookmark.url),
-                                    missed: result.match.missed
+                                    missed: result.match.missed,
+                                    hasActions: !BookmarkActions.actions(for: result.bookmark).isEmpty
                                 )
                                 .id(index)
                                 .contentShape(Rectangle())
@@ -181,6 +235,7 @@ struct BookmarkRow: View {
     let selected: Bool
     let icon: NSImage?
     let missed: Int
+    let hasActions: Bool
 
     private var isApproximate: Bool { missed > 0 }
 
@@ -224,6 +279,12 @@ struct BookmarkRow: View {
                         Capsule().fill(Color.primary.opacity(0.12))
                     )
             }
+            if hasActions {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(selected ? .primary : .secondary)
+                    .padding(.leading, 4)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 7)
@@ -247,5 +308,75 @@ struct BookmarkRow: View {
             result += piece
         }
         return result
+    }
+}
+
+struct BookmarkActionsList: View {
+    let state: BookmarkViewModel.ActionsState
+    let viewModel: BookmarkViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(state.source.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer()
+                Text("← to go back")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(0.05))
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(0..<state.actions.count, id: \.self) { index in
+                            let action = state.actions[index]
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(Color.primary.opacity(0.10))
+                                    Image(systemName: action.symbol)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(.primary.opacity(0.9))
+                                }
+                                .frame(width: 32, height: 32)
+                                Text(action.title)
+                                    .font(.system(size: 15))
+                                Spacer()
+                                Text(action.url.replacingOccurrences(of: "https://", with: ""))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 8)
+                            .background(index == state.selectedIndex ? Color.accentColor.opacity(0.35) : Color.clear)
+                            .id(index)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                var s = state
+                                s.selectedIndex = index
+                                viewModel.actionsState = s
+                                viewModel.activateSelection()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+                .onChange(of: state.selectedIndex) { _, newIndex in
+                    proxy.scrollTo(newIndex)
+                }
+            }
+        }
     }
 }
