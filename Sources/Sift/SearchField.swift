@@ -17,6 +17,7 @@ struct SearchField: NSViewRepresentable {
     var onCancel: () -> Void
 
     func makeNSView(context: Context) -> KeyHandlingTextField {
+        DebugLog.write("SearchField.makeNSView")
         let field = KeyHandlingTextField()
         field.isBordered = false
         field.drawsBackground = false
@@ -34,6 +35,7 @@ struct SearchField: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: KeyHandlingTextField, context: Context) {
+        DebugLog.write("SearchField.updateNSView field='\(nsView.stringValue)' text='\(text)' focus=\(focusToken)")
         if nsView.stringValue != text { nsView.stringValue = text }
         if context.coordinator.lastFocusToken != focusToken {
             context.coordinator.lastFocusToken = focusToken
@@ -44,16 +46,28 @@ struct SearchField: NSViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator {
+        DebugLog.write("SearchField.makeCoordinator")
+        return Coordinator(text: $text)
+    }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding var text: String
         var lastFocusToken = -1
 
-        init(text: Binding<String>) { _text = text }
+        init(text: Binding<String>) {
+            _text = text
+            super.init()
+            DebugLog.write("SearchField.Coordinator.init")
+        }
+
+        deinit {
+            DebugLog.write("SearchField.Coordinator.deinit")
+        }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSTextField else { return }
+            DebugLog.write("SearchField.controlTextDidChange '\(field.stringValue)'")
             text = field.stringValue
         }
 

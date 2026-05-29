@@ -80,6 +80,7 @@ public struct Config: Codable, Equatable {
     public var panelPosition: PanelPosition
     public var backdropEnabled: Bool
     public var backdropIntensity: Double
+    public var includeZenBookmarks: Bool
 
     public static let defaultBackdropIntensity: Double = 0.6
 
@@ -88,13 +89,15 @@ public struct Config: Codable, Equatable {
         launchAtLogin: Bool = false,
         panelPosition: PanelPosition = .topCenter,
         backdropEnabled: Bool = false,
-        backdropIntensity: Double = Config.defaultBackdropIntensity
+        backdropIntensity: Double = Config.defaultBackdropIntensity,
+        includeZenBookmarks: Bool = true
     ) {
         self.disabledBundleIDs = disabledBundleIDs
         self.launchAtLogin = launchAtLogin
         self.panelPosition = panelPosition
         self.backdropEnabled = backdropEnabled
         self.backdropIntensity = max(0, min(1, backdropIntensity))
+        self.includeZenBookmarks = includeZenBookmarks
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -103,6 +106,7 @@ public struct Config: Codable, Equatable {
         case panelPosition
         case backdropEnabled
         case backdropIntensity
+        case includeZenBookmarks
     }
 
     public init(from decoder: Decoder) throws {
@@ -113,6 +117,7 @@ public struct Config: Codable, Equatable {
         self.backdropEnabled = try container.decodeIfPresent(Bool.self, forKey: .backdropEnabled) ?? false
         let rawIntensity = try container.decodeIfPresent(Double.self, forKey: .backdropIntensity) ?? Config.defaultBackdropIntensity
         self.backdropIntensity = max(0, min(1, rawIntensity))
+        self.includeZenBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeZenBookmarks) ?? true
     }
 }
 

@@ -5,7 +5,12 @@ let package = Package(
     name: "Sift",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "SiftCore"),
+        .target(
+            name: "SiftCore",
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
+            ]
+        ),
         .executableTarget(
             name: "Sift",
             dependencies: ["SiftCore"],

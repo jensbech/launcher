@@ -3,16 +3,16 @@ import SwiftUI
 import SiftCore
 
 @MainActor
-final class SiftController {
+final class BookmarkController {
     private let store: Store
     private var panel: SiftPanel?
     private var backdrop: BackdropWindow?
-    private let viewModel: SiftViewModel
+    private let viewModel: BookmarkViewModel
 
-    init(store: Store) {
+    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore()) {
         self.store = store
-        self.viewModel = SiftViewModel(store: store)
-        viewModel.onLaunch = { [weak self] item in self?.launch(item) }
+        self.viewModel = BookmarkViewModel(store: store, bookmarkStore: bookmarkStore)
+        viewModel.onOpen = { [weak self] bookmark in self?.open(bookmark) }
         viewModel.onEscape = { [weak self] in self?.hide() }
     }
 
@@ -45,13 +45,14 @@ final class SiftController {
         PanelPlacement.dismissBackdrop(&backdrop)
     }
 
-    private func launch(_ item: AppItem) {
+    private func open(_ bookmark: Bookmark) {
         hide()
-        NSWorkspace.shared.open(item.url)
+        guard let url = URL(string: bookmark.url) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func makePanel() -> SiftPanel {
-        let panel = SiftPanel(rootView: SiftView(viewModel: viewModel))
+        let panel = SiftPanel(rootView: BookmarkView(viewModel: viewModel))
         panel.onResignKey = { [weak self] in self?.hide() }
         return panel
     }

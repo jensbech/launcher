@@ -11,17 +11,23 @@ final class SettingsViewModel: ObservableObject {
     @Published var panelPosition: PanelPosition = .topCenter
     @Published var backdropEnabled: Bool = false
     @Published var backdropIntensity: Double = Config.defaultBackdropIntensity
+    @Published var includeZenBookmarks: Bool = true
+    @Published var managedBookmarks: [Bookmark] = []
 
     private let store: Store
+    private let bookmarkStore: BookmarkStore
 
-    init(store: Store) {
+    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore()) {
         self.store = store
+        self.bookmarkStore = bookmarkStore
         let config = store.load()
         self.disabled = config.disabledBundleIDs
         self.launchAtLogin = config.launchAtLogin
         self.panelPosition = config.panelPosition
         self.backdropEnabled = config.backdropEnabled
         self.backdropIntensity = config.backdropIntensity
+        self.includeZenBookmarks = config.includeZenBookmarks
+        self.managedBookmarks = bookmarkStore.load()
         self.apps = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
     }
 
@@ -62,14 +68,38 @@ final class SettingsViewModel: ObservableObject {
         persist()
     }
 
+    func setIncludeZenBookmarks(_ value: Bool) {
+        includeZenBookmarks = value
+        persist()
+    }
+
+    func addBookmark(name: String, url: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, !trimmedURL.isEmpty else { return }
+        let normalized = trimmedURL.contains("://") ? trimmedURL : "https://\(trimmedURL)"
+        managedBookmarks.append(Bookmark(name: trimmedName, url: normalized, source: .managed))
+        persistBookmarks()
+    }
+
+    func removeBookmark(id: String) {
+        managedBookmarks.removeAll { $0.id == id }
+        persistBookmarks()
+    }
+
     private func persist() {
         store.save(Config(
             disabledBundleIDs: disabled,
             launchAtLogin: launchAtLogin,
             panelPosition: panelPosition,
             backdropEnabled: backdropEnabled,
-            backdropIntensity: backdropIntensity
+            backdropIntensity: backdropIntensity,
+            includeZenBookmarks: includeZenBookmarks
         ))
+    }
+
+    private func persistBookmarks() {
+        bookmarkStore.save(managedBookmarks)
     }
 }
 
@@ -80,12 +110,14 @@ struct SettingsView: View {
         TabView {
             AppsTab(viewModel: viewModel)
                 .tabItem { Label("Apps", systemImage: "square.grid.2x2") }
+            BookmarksTab(viewModel: viewModel)
+                .tabItem { Label("Bookmarks", systemImage: "bookmark") }
             PositionTab(viewModel: viewModel)
                 .tabItem { Label("Position", systemImage: "rectangle.3.group") }
             GeneralTab(viewModel: viewModel)
                 .tabItem { Label("General", systemImage: "gearshape") }
         }
-        .frame(width: 460, height: 560)
+        .frame(width: 480, height: 580)
     }
 }
 
@@ -114,6 +146,79 @@ private struct AppsTab: View {
             }
         }
         .padding(20)
+    }
+}
+
+private struct BookmarksTab: View {
+    @ObservedObject var viewModel: SettingsViewModel
+    @State private var newName: String = ""
+    @State private var newURL: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Bookmarks").font(.headline)
+
+            Toggle("Include Zen bookmarks", isOn: Binding(
+                get: { viewModel.includeZenBookmarks },
+                set: { viewModel.setIncludeZenBookmarks($0) }
+            ))
+            Text("Imports bookmarks from your Zen browser profile and merges them with the list below. Open with ⇧⌘Space.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider().padding(.vertical, 2)
+
+            Text("Custom Bookmarks").font(.subheadline).bold()
+
+            HStack(spacing: 6) {
+                TextField("Name", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 140)
+                TextField("https://example.com", text: $newURL)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addBookmark)
+                Button("Add", action: addBookmark)
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty ||
+                              newURL.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if viewModel.managedBookmarks.isEmpty {
+                Text("No custom bookmarks yet. Add one above.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 12)
+            } else {
+                List {
+                    ForEach(viewModel.managedBookmarks) { bookmark in
+                        HStack(spacing: 10) {
+                            Image(systemName: "globe")
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(bookmark.name).font(.callout)
+                                Text(bookmark.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Button {
+                                viewModel.removeBookmark(id: bookmark.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(20)
+    }
+
+    private func addBookmark() {
+        viewModel.addBookmark(name: newName, url: newURL)
+        newName = ""
+        newURL = ""
     }
 }
 
