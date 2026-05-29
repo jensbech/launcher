@@ -16,9 +16,14 @@ This app is fully vibe coded.
 ## Build
 
 ```bash
-./scripts/build-app.sh
+just build
 open build/Sift.app
+# or: just run
 ```
+
+All tasks run through [`just`](https://github.com/casey/just); see `just`
+for the full list. The recipes wrap the scripts in `scripts/`, which are
+also safe to invoke directly from any working directory.
 
 ## First-run setup
 
@@ -40,10 +45,10 @@ first launch.
 The icon is generated from `Resources/AppIcon.svg`:
 
 ```bash
-./scripts/make-icon.sh   # rebuilds Resources/Sift.icns from the SVG
+just icon   # rebuilds Resources/Sift.icns from the SVG
 ```
 
-`build-app.sh` regenerates it automatically if missing.
+`just build` regenerates it automatically if missing.
 
 ## Configuration
 
@@ -54,6 +59,6 @@ means every app is searchable.
 ## Development
 
 ```bash
-./scripts/test.sh   # run SiftCore unit tests
-swift run Sift  # run unbundled (launch-at-login needs the bundled .app)
+just test       # run SiftCore unit tests
+just dev        # run unbundled (launch-at-login needs the bundled .app)
 ```

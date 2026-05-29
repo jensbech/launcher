@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT_DIR}"
+
 APP_NAME="Sift"
 BUNDLE_ID="com.local.sift"
 BUILD_DIR=".build/release"
@@ -10,7 +14,7 @@ CONTENTS="${APP_BUNDLE}/Contents"
 swift build -c release
 
 if [ ! -f Resources/Sift.icns ]; then
-    ./scripts/make-icon.sh
+    "${SCRIPT_DIR}/make-icon.sh"
 fi
 
 rm -rf "${APP_BUNDLE}"
