@@ -40,6 +40,8 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Sift lists and connects your paired Bluetooth devices from the launcher.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key><string>Sift lists and connects your paired Bluetooth devices from the launcher.</string>
 </dict>
 </plist>
 PLIST

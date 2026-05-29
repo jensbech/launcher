@@ -140,6 +140,9 @@ public struct Config: Codable, Equatable {
     public var includeZenBookmarks: Bool
     public var launcherHotkey: Hotkey
     public var bookmarksHotkey: Hotkey
+    public var devicesEnabled: Bool
+    public var audioSwitcherEnabled: Bool
+    public var disabledDeviceIDs: Set<String>
 
     public static let defaultBackdropIntensity: Double = 0.6
     public static let defaultPsychedelicIntensity: Double = 0.7
@@ -154,7 +157,10 @@ public struct Config: Codable, Equatable {
         psychedelicIntensity: Double = Config.defaultPsychedelicIntensity,
         includeZenBookmarks: Bool = true,
         launcherHotkey: Hotkey = .defaultLauncher,
-        bookmarksHotkey: Hotkey = .defaultBookmarks
+        bookmarksHotkey: Hotkey = .defaultBookmarks,
+        devicesEnabled: Bool = false,
+        audioSwitcherEnabled: Bool = true,
+        disabledDeviceIDs: Set<String> = []
     ) {
         self.disabledBundleIDs = disabledBundleIDs
         self.launchAtLogin = launchAtLogin
@@ -166,6 +172,9 @@ public struct Config: Codable, Equatable {
         self.includeZenBookmarks = includeZenBookmarks
         self.launcherHotkey = launcherHotkey
         self.bookmarksHotkey = bookmarksHotkey
+        self.devicesEnabled = devicesEnabled
+        self.audioSwitcherEnabled = audioSwitcherEnabled
+        self.disabledDeviceIDs = disabledDeviceIDs
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -179,6 +188,9 @@ public struct Config: Codable, Equatable {
         case includeZenBookmarks
         case launcherHotkey
         case bookmarksHotkey
+        case devicesEnabled
+        case audioSwitcherEnabled
+        case disabledDeviceIDs
     }
 
     public init(from decoder: Decoder) throws {
@@ -195,6 +207,9 @@ public struct Config: Codable, Equatable {
         self.includeZenBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeZenBookmarks) ?? true
         self.launcherHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .launcherHotkey) ?? .defaultLauncher
         self.bookmarksHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .bookmarksHotkey) ?? .defaultBookmarks
+        self.devicesEnabled = try container.decodeIfPresent(Bool.self, forKey: .devicesEnabled) ?? false
+        self.audioSwitcherEnabled = try container.decodeIfPresent(Bool.self, forKey: .audioSwitcherEnabled) ?? true
+        self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
     }
 }
 

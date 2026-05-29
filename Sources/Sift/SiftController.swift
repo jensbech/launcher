@@ -14,6 +14,7 @@ final class SiftController {
         self.viewModel = SiftViewModel(store: store)
         viewModel.onLaunch = { [weak self] item in self?.launch(item) }
         viewModel.onEscape = { [weak self] in self?.hide() }
+        viewModel.onDeviceActivated = { [weak self] in self?.hide() }
     }
 
     func toggle() {

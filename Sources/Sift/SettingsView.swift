@@ -17,6 +17,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var managedBookmarks: [Bookmark] = []
     @Published var launcherHotkey: Hotkey = .defaultLauncher
     @Published var bookmarksHotkey: Hotkey = .defaultBookmarks
+    @Published var devicesEnabled: Bool = false
+    @Published var audioSwitcherEnabled: Bool = true
+    @Published var disabledDeviceIDs: Set<String> = []
+    @Published var pairedDevices: [DeviceItem] = []
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
@@ -37,8 +41,38 @@ final class SettingsViewModel: ObservableObject {
         self.includeZenBookmarks = config.includeZenBookmarks
         self.launcherHotkey = config.launcherHotkey
         self.bookmarksHotkey = config.bookmarksHotkey
+        self.devicesEnabled = config.devicesEnabled
+        self.audioSwitcherEnabled = config.audioSwitcherEnabled
+        self.disabledDeviceIDs = config.disabledDeviceIDs
         self.managedBookmarks = bookmarkStore.load()
         self.apps = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
+    }
+
+    func refreshPairedDevices() {
+        pairedDevices = BluetoothService.pairedDevices()
+    }
+
+    func setDevicesEnabled(_ value: Bool) {
+        devicesEnabled = value
+        persist()
+    }
+
+    func setAudioSwitcherEnabled(_ value: Bool) {
+        audioSwitcherEnabled = value
+        persist()
+    }
+
+    func isDeviceEnabled(_ device: DeviceItem) -> Bool {
+        !disabledDeviceIDs.contains(device.id)
+    }
+
+    func toggleDevice(_ device: DeviceItem) {
+        if disabledDeviceIDs.contains(device.id) {
+            disabledDeviceIDs.remove(device.id)
+        } else {
+            disabledDeviceIDs.insert(device.id)
+        }
+        persist()
     }
 
     var filtered: [AppItem] {
@@ -139,7 +173,10 @@ final class SettingsViewModel: ObservableObject {
             psychedelicIntensity: psychedelicIntensity,
             includeZenBookmarks: includeZenBookmarks,
             launcherHotkey: launcherHotkey,
-            bookmarksHotkey: bookmarksHotkey
+            bookmarksHotkey: bookmarksHotkey,
+            devicesEnabled: devicesEnabled,
+            audioSwitcherEnabled: audioSwitcherEnabled,
+            disabledDeviceIDs: disabledDeviceIDs
         ))
     }
 
@@ -149,7 +186,7 @@ final class SettingsViewModel: ObservableObject {
 }
 
 private enum SettingsSection: Int, CaseIterable, Identifiable {
-    case apps, bookmarks, position, shortcuts, general
+    case apps, bookmarks, devices, position, shortcuts, general
 
     var id: Int { rawValue }
 
@@ -159,6 +196,7 @@ private enum SettingsSection: Int, CaseIterable, Identifiable {
         switch self {
         case .apps: return "Apps"
         case .bookmarks: return "Bookmarks"
+        case .devices: return "Devices"
         case .position: return "Position"
         case .shortcuts: return "Shortcuts"
         case .general: return "General"
@@ -169,6 +207,7 @@ private enum SettingsSection: Int, CaseIterable, Identifiable {
         switch self {
         case .apps: return "Choose which apps are searchable from the launcher."
         case .bookmarks: return "Pin URLs and merge browser bookmarks into Sift."
+        case .devices: return "Connect Bluetooth and switch audio outputs from the launcher."
         case .position: return "Pick where the launcher panel appears on screen."
         case .shortcuts: return "Rebind the global hotkeys that summon Sift."
         case .general: return "Behavior, startup, and the optional backdrop."
@@ -374,6 +413,7 @@ private struct ContentPane: View {
                     switch section {
                     case .apps: AppsPane(viewModel: viewModel)
                     case .bookmarks: BookmarksPane(viewModel: viewModel)
+                    case .devices: DevicesPane(viewModel: viewModel)
                     case .position: PositionPane(viewModel: viewModel)
                     case .shortcuts: ShortcutsPane(viewModel: viewModel)
                     case .general: GeneralPane(viewModel: viewModel)
@@ -1147,6 +1187,146 @@ private struct GridButtons: View {
             }
         }
         .padding(10)
+    }
+}
+
+private struct DevicesPane: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            EmptyView()
+                .onAppear { viewModel.refreshPairedDevices() }
+            Card(title: "MASTER", caption: viewModel.devicesEnabled ? "ENABLED" : "OFF") {
+                VStack(spacing: 14) {
+                    ToggleRow(
+                        title: "Show devices in the launcher",
+                        description: "When enabled, paired Bluetooth devices and audio outputs appear in the ⌘Space search results, and currently-connected devices show in a strip at the top.",
+                        isOn: Binding(
+                            get: { viewModel.devicesEnabled },
+                            set: { viewModel.setDevicesEnabled($0) }
+                        )
+                    )
+
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+
+                    ToggleRow(
+                        title: "Show audio output switcher",
+                        description: "Lists output devices (built-in speakers, displays with audio, AirPlay) as searchable items. Enter swaps the active output.",
+                        isOn: Binding(
+                            get: { viewModel.audioSwitcherEnabled },
+                            set: { viewModel.setAudioSwitcherEnabled($0) }
+                        )
+                    )
+                    .opacity(viewModel.devicesEnabled ? 1 : 0.5)
+                    .disabled(!viewModel.devicesEnabled)
+                }
+            }
+
+            Card(title: "BLUETOOTH", caption: "\(viewModel.pairedDevices.count) paired") {
+                HStack {
+                    Spacer()
+                    Button {
+                        viewModel.refreshPairedDevices()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text("Refresh")
+                                .font(.system(size: 11.5, weight: .medium))
+                        }
+                        .foregroundStyle(.white.opacity(0.8))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Palette.hairline, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if viewModel.pairedDevices.isEmpty {
+                    EmptyState(icon: "wave.3.right", text: "No paired Bluetooth devices found.")
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(viewModel.pairedDevices.enumerated()), id: \.element.id) { idx, device in
+                            DevicePickerRow(viewModel: viewModel, device: device)
+                            if idx < viewModel.pairedDevices.count - 1 {
+                                Rectangle()
+                                    .fill(Palette.hairline)
+                                    .frame(height: 1)
+                                    .padding(.leading, 48)
+                            }
+                        }
+                    }
+                }
+            }
+            .opacity(viewModel.devicesEnabled ? 1 : 0.55)
+            .disabled(!viewModel.devicesEnabled)
+
+            Card(title: "NOTE") {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.top, 1)
+                    Text("Pair devices in System Settings → Bluetooth first. Sift only connects to devices already known to macOS — it doesn't pair new ones. Connection takes 1–3 seconds.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+private struct DevicePickerRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+    let device: DeviceItem
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(device.isActive ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.06))
+                    .frame(width: 32, height: 32)
+                Image(systemName: device.category.systemImageName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(device.isActive ? Color.accentColor : .white.opacity(0.75))
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(device.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(viewModel.isDeviceEnabled(device) ? 0.95 : 0.5))
+                Text(device.isActive ? "Connected" : "Not connected")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(device.isActive ? Color.accentColor.opacity(0.9) : Palette.muted)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { viewModel.isDeviceEnabled(device) },
+                set: { _ in viewModel.toggleDevice(device) }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.mini)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(hover ? Color.white.opacity(0.03) : .clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
     }
 }
 

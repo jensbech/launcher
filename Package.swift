@@ -16,7 +16,9 @@ let package = Package(
             dependencies: ["SiftCore"],
             linkerSettings: [
                 .linkedFramework("Carbon"),
-                .linkedFramework("ServiceManagement")
+                .linkedFramework("ServiceManagement"),
+                .linkedFramework("IOBluetooth"),
+                .linkedFramework("CoreAudio")
             ]
         ),
         .testTarget(
