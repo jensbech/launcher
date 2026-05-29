@@ -18,6 +18,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var launcherHotkey: Hotkey = .defaultLauncher
     @Published var bookmarksHotkey: Hotkey = .defaultBookmarks
     @Published var devicesEnabled: Bool = false
+    @Published var statusStripEnabled: Bool = false
     @Published var audioSwitcherEnabled: Bool = true
     @Published var disabledDeviceIDs: Set<String> = []
     @Published var pairedDevices: [DeviceItem] = []
@@ -42,6 +43,7 @@ final class SettingsViewModel: ObservableObject {
         self.launcherHotkey = config.launcherHotkey
         self.bookmarksHotkey = config.bookmarksHotkey
         self.devicesEnabled = config.devicesEnabled
+        self.statusStripEnabled = config.statusStripEnabled
         self.audioSwitcherEnabled = config.audioSwitcherEnabled
         self.disabledDeviceIDs = config.disabledDeviceIDs
         self.managedBookmarks = bookmarkStore.load()
@@ -59,6 +61,11 @@ final class SettingsViewModel: ObservableObject {
 
     func setAudioSwitcherEnabled(_ value: Bool) {
         audioSwitcherEnabled = value
+        persist()
+    }
+
+    func setStatusStripEnabled(_ value: Bool) {
+        statusStripEnabled = value
         persist()
     }
 
@@ -176,6 +183,7 @@ final class SettingsViewModel: ObservableObject {
             bookmarksHotkey: bookmarksHotkey,
             devicesEnabled: devicesEnabled,
             audioSwitcherEnabled: audioSwitcherEnabled,
+            statusStripEnabled: statusStripEnabled,
             disabledDeviceIDs: disabledDeviceIDs
         ))
     }
@@ -207,7 +215,7 @@ private enum SettingsSection: Int, CaseIterable, Identifiable {
         switch self {
         case .apps: return "Choose which apps are searchable from the launcher."
         case .bookmarks: return "Pin URLs and merge browser bookmarks into Sift."
-        case .devices: return "Connect Bluetooth and switch audio outputs from the launcher."
+        case .devices: return "Show a status strip and/or search Bluetooth and audio outputs from the launcher."
         case .position: return "Pick where the launcher panel appears on screen."
         case .shortcuts: return "Rebind the global hotkeys that summon Sift."
         case .general: return "Behavior, startup, and the optional backdrop."
@@ -1197,11 +1205,22 @@ private struct DevicesPane: View {
         VStack(alignment: .leading, spacing: 16) {
             EmptyView()
                 .onAppear { viewModel.refreshPairedDevices() }
-            Card(title: "MASTER", caption: viewModel.devicesEnabled ? "ENABLED" : "OFF") {
+            Card(title: "STATUS STRIP", caption: viewModel.statusStripEnabled ? "ON" : "OFF") {
+                ToggleRow(
+                    title: "Show connected devices strip",
+                    description: "When the search field is empty, a strip under it lists your currently-connected Bluetooth devices and the active audio output. Display only — nothing to click.",
+                    isOn: Binding(
+                        get: { viewModel.statusStripEnabled },
+                        set: { viewModel.setStatusStripEnabled($0) }
+                    )
+                )
+            }
+
+            Card(title: "SEARCH", caption: viewModel.devicesEnabled ? "ON" : "OFF") {
                 VStack(spacing: 14) {
                     ToggleRow(
-                        title: "Show devices in the launcher",
-                        description: "When enabled, paired Bluetooth devices and audio outputs appear in the ⌘Space search results, and currently-connected devices show in a strip at the top.",
+                        title: "Search devices in the launcher",
+                        description: "When you start typing in ⌘Space, paired Bluetooth devices match alongside apps. Enter on a device connects or disconnects it.",
                         isOn: Binding(
                             get: { viewModel.devicesEnabled },
                             set: { viewModel.setDevicesEnabled($0) }
@@ -1213,8 +1232,8 @@ private struct DevicesPane: View {
                         .frame(height: 1)
 
                     ToggleRow(
-                        title: "Show audio output switcher",
-                        description: "Lists output devices (built-in speakers, displays with audio, AirPlay) as searchable items. Enter swaps the active output.",
+                        title: "Include audio outputs in search",
+                        description: "Also lists output devices (built-in speakers, displays with audio, AirPlay). Enter swaps the active output.",
                         isOn: Binding(
                             get: { viewModel.audioSwitcherEnabled },
                             set: { viewModel.setAudioSwitcherEnabled($0) }
@@ -1268,8 +1287,8 @@ private struct DevicesPane: View {
                     }
                 }
             }
-            .opacity(viewModel.devicesEnabled ? 1 : 0.55)
-            .disabled(!viewModel.devicesEnabled)
+            .opacity((viewModel.devicesEnabled || viewModel.statusStripEnabled) ? 1 : 0.55)
+            .disabled(!viewModel.devicesEnabled && !viewModel.statusStripEnabled)
 
             Card(title: "NOTE") {
                 HStack(alignment: .top, spacing: 10) {

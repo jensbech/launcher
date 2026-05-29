@@ -29,6 +29,7 @@ final class SiftViewModel: ObservableObject {
     @Published var focusToken: Int = 0
     @Published var statusDevices: [DeviceItem] = []
     @Published var devicesEnabled: Bool = false
+    @Published var statusStripEnabled: Bool = false
 
     var onLaunch: ((AppItem) -> Void)?
     var onEscape: (() -> Void)?
@@ -65,11 +66,12 @@ final class SiftViewModel: ObservableObject {
         disabledIDs = config.disabledBundleIDs
         disabledDeviceIDs = config.disabledDeviceIDs
         devicesEnabled = config.devicesEnabled
+        statusStripEnabled = config.statusStripEnabled
         audioSwitcherEnabled = config.audioSwitcherEnabled
         usage = usageStore.load()
         focusToken &+= 1
         refreshIndex()
-        if devicesEnabled {
+        if devicesEnabled || statusStripEnabled {
             refreshDevices()
         } else {
             devices = []
@@ -167,7 +169,7 @@ struct SiftView: View {
             .padding(.horizontal, 22)
             .padding(.vertical, 16)
 
-            if viewModel.devicesEnabled && viewModel.query.isEmpty && !viewModel.statusDevices.isEmpty {
+            if viewModel.statusStripEnabled && viewModel.query.isEmpty && !viewModel.statusDevices.isEmpty {
                 Divider().opacity(0.4)
                 DeviceStatusStrip(devices: viewModel.statusDevices)
             }

@@ -142,6 +142,7 @@ public struct Config: Codable, Equatable {
     public var bookmarksHotkey: Hotkey
     public var devicesEnabled: Bool
     public var audioSwitcherEnabled: Bool
+    public var statusStripEnabled: Bool
     public var disabledDeviceIDs: Set<String>
 
     public static let defaultBackdropIntensity: Double = 0.6
@@ -160,6 +161,7 @@ public struct Config: Codable, Equatable {
         bookmarksHotkey: Hotkey = .defaultBookmarks,
         devicesEnabled: Bool = false,
         audioSwitcherEnabled: Bool = true,
+        statusStripEnabled: Bool = false,
         disabledDeviceIDs: Set<String> = []
     ) {
         self.disabledBundleIDs = disabledBundleIDs
@@ -174,6 +176,7 @@ public struct Config: Codable, Equatable {
         self.bookmarksHotkey = bookmarksHotkey
         self.devicesEnabled = devicesEnabled
         self.audioSwitcherEnabled = audioSwitcherEnabled
+        self.statusStripEnabled = statusStripEnabled
         self.disabledDeviceIDs = disabledDeviceIDs
     }
 
@@ -190,6 +193,7 @@ public struct Config: Codable, Equatable {
         case bookmarksHotkey
         case devicesEnabled
         case audioSwitcherEnabled
+        case statusStripEnabled
         case disabledDeviceIDs
     }
 
@@ -209,6 +213,7 @@ public struct Config: Codable, Equatable {
         self.bookmarksHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .bookmarksHotkey) ?? .defaultBookmarks
         self.devicesEnabled = try container.decodeIfPresent(Bool.self, forKey: .devicesEnabled) ?? false
         self.audioSwitcherEnabled = try container.decodeIfPresent(Bool.self, forKey: .audioSwitcherEnabled) ?? true
+        self.statusStripEnabled = try container.decodeIfPresent(Bool.self, forKey: .statusStripEnabled) ?? false
         self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
     }
 }
