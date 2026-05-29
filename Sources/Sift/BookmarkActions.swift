@@ -8,6 +8,52 @@ struct BookmarkAction: Identifiable, Equatable {
     let url: String
 }
 
+enum BookmarkEnv {
+    static let preferenceOrder = ["dev", "test", "stage", "staging", "prod"]
+
+    private static let patterns: [(needle: String, env: String)] = [
+        ("-dev.", "dev"),
+        ("-test.", "test"),
+        ("-stage.", "stage"),
+        ("-staging.", "staging"),
+        ("-prod.", "prod"),
+        (".dev.", "dev"),
+        (".test.", "test"),
+        (".stage.", "stage"),
+        (".staging.", "staging"),
+        (".prod.", "prod")
+    ]
+
+    static func info(forURL url: String) -> (env: String, normalized: String)? {
+        for (needle, env) in patterns {
+            guard url.range(of: needle) != nil else { continue }
+            let prefix = String(needle.first!)
+            let replacement = "\(prefix){env}."
+            let normalized = url.replacingOccurrences(of: needle, with: replacement)
+            return (env, normalized)
+        }
+        return nil
+    }
+
+    static func strippedTitle(_ title: String) -> String {
+        var result = title
+        for env in preferenceOrder {
+            result = result.replacingOccurrences(of: " (\(env))", with: "")
+        }
+        return result
+    }
+
+    static func symbol(forEnv env: String) -> String {
+        switch env {
+        case "dev": return "hammer"
+        case "test": return "flask"
+        case "stage", "staging": return "theatermasks"
+        case "prod": return "globe.americas"
+        default: return "circle"
+        }
+    }
+}
+
 enum BookmarkActions {
     static func actions(for bookmark: Bookmark) -> [BookmarkAction] {
         guard let url = URL(string: bookmark.url),

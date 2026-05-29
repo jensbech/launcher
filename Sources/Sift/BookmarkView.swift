@@ -7,9 +7,45 @@ final class BookmarkViewModel: ObservableObject {
     static let resultLimit = 100
 
     struct Result: Identifiable {
-        let bookmark: Bookmark
+        enum Kind {
+            case single(Bookmark)
+            case envGroup(defaultBookmark: Bookmark, variants: [(env: String, bookmark: Bookmark)], templateURL: String)
+        }
+        let kind: Kind
         let match: FuzzyMatch
-        var id: String { bookmark.id }
+
+        var id: String {
+            switch kind {
+            case .single(let b): return b.id
+            case .envGroup(_, _, let template): return "env:\(template)"
+            }
+        }
+
+        var primaryBookmark: Bookmark {
+            switch kind {
+            case .single(let b): return b
+            case .envGroup(let b, _, _): return b
+            }
+        }
+
+        var displayName: String {
+            switch kind {
+            case .single(let b): return b.name
+            case .envGroup(let b, _, _): return BookmarkEnv.strippedTitle(b.name)
+            }
+        }
+
+        var displayURL: String {
+            switch kind {
+            case .single(let b): return b.url
+            case .envGroup(_, _, let template): return template
+            }
+        }
+
+        var isEnvGroup: Bool {
+            if case .envGroup = kind { return true }
+            return false
+        }
     }
 
     struct ActionsState: Equatable {
@@ -62,10 +98,26 @@ final class BookmarkViewModel: ObservableObject {
     func enterActions() {
         guard actionsState == nil,
               results.indices.contains(selectedIndex) else { return }
-        let bookmark = results[selectedIndex].bookmark
-        let actions = BookmarkActions.actions(for: bookmark)
+        let result = results[selectedIndex]
+        let actions = Self.actions(for: result)
         guard !actions.isEmpty else { return }
-        actionsState = ActionsState(source: bookmark, actions: actions, selectedIndex: 0)
+        actionsState = ActionsState(source: result.primaryBookmark, actions: actions, selectedIndex: 0)
+    }
+
+    static func actions(for result: Result) -> [BookmarkAction] {
+        switch result.kind {
+        case .single(let b):
+            return BookmarkActions.actions(for: b)
+        case .envGroup(_, let variants, _):
+            return variants.map { variant in
+                BookmarkAction(
+                    id: "env-\(variant.env)",
+                    title: variant.env.capitalized,
+                    symbol: BookmarkEnv.symbol(forEnv: variant.env),
+                    url: variant.bookmark.url
+                )
+            }
+        }
     }
 
     @discardableResult
@@ -82,9 +134,66 @@ final class BookmarkViewModel: ObservableObject {
             return
         }
         let matches = FuzzyMatcher.search(query, in: allBookmarks, name: { $0.name }, secondary: { $0.url })
-        results = matches.prefix(Self.resultLimit).map { Result(bookmark: $0.0, match: $0.1) }
+        results = Self.groupedResults(matches, limit: Self.resultLimit)
         DebugLog.write("BookmarkVM.runSearch matched=\(matches.count) results=\(results.count)")
         selectedIndex = 0
+    }
+
+    private static func groupedResults(_ matches: [(Bookmark, FuzzyMatch)], limit: Int) -> [Result] {
+        struct GroupAccum {
+            var variants: [(env: String, bookmark: Bookmark)] = []
+            var bestMatch: FuzzyMatch
+        }
+
+        var groupOrder: [String] = []
+        var groups: [String: GroupAccum] = [:]
+        var output: [Result] = []
+
+        for (bookmark, match) in matches {
+            if let info = BookmarkEnv.info(forURL: bookmark.url) {
+                let key = info.normalized
+                if groups[key] == nil {
+                    groups[key] = GroupAccum(bestMatch: match)
+                    groupOrder.append(key)
+                }
+                var entry = groups[key]!
+                if !entry.variants.contains(where: { $0.env == info.env }) {
+                    entry.variants.append((info.env, bookmark))
+                }
+                if match.score > entry.bestMatch.score || match.missed < entry.bestMatch.missed {
+                    entry.bestMatch = match
+                }
+                groups[key] = entry
+            } else {
+                output.append(Result(kind: .single(bookmark), match: match))
+            }
+        }
+
+        for key in groupOrder {
+            guard let entry = groups[key] else { continue }
+            if entry.variants.count >= 2 {
+                let ordered = BookmarkEnv.preferenceOrder.compactMap { env in
+                    entry.variants.first { $0.env == env }
+                } + entry.variants.filter { v in
+                    !BookmarkEnv.preferenceOrder.contains(v.env)
+                }
+                let defaultBookmark = ordered.first?.bookmark ?? entry.variants[0].bookmark
+                output.append(Result(
+                    kind: .envGroup(defaultBookmark: defaultBookmark, variants: ordered, templateURL: key),
+                    match: entry.bestMatch
+                ))
+            } else {
+                output.append(Result(kind: .single(entry.variants[0].bookmark), match: entry.bestMatch))
+            }
+        }
+
+        output.sort { a, b in
+            if a.match.missed != b.match.missed { return a.match.missed < b.match.missed }
+            if a.match.score != b.match.score { return a.match.score > b.match.score }
+            return a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+        }
+
+        return Array(output.prefix(limit))
     }
 
     func moveDown() {
@@ -116,7 +225,7 @@ final class BookmarkViewModel: ObservableObject {
             return
         }
         guard results.indices.contains(selectedIndex) else { return }
-        onOpen?(results[selectedIndex].bookmark)
+        onOpen?(results[selectedIndex].primaryBookmark)
     }
 
     func escape() {
@@ -194,12 +303,14 @@ struct BookmarkView: View {
                             ForEach(0..<viewModel.results.count, id: \.self) { index in
                                 let result = viewModel.results[index]
                                 BookmarkRow(
-                                    item: result.bookmark,
+                                    displayName: result.displayName,
+                                    displayURL: result.displayURL,
+                                    source: result.primaryBookmark.source,
                                     query: viewModel.query,
                                     selected: index == viewModel.selectedIndex,
-                                    icon: faviconCache.icon(for: result.bookmark.url),
+                                    icon: faviconCache.icon(for: result.primaryBookmark.url),
                                     missed: result.match.missed,
-                                    hasActions: !BookmarkActions.actions(for: result.bookmark).isEmpty
+                                    hasActions: !BookmarkViewModel.actions(for: result).isEmpty
                                 )
                                 .id(index)
                                 .contentShape(Rectangle())
@@ -207,7 +318,7 @@ struct BookmarkView: View {
                                     viewModel.selectedIndex = index
                                     viewModel.activateSelection()
                                 }
-                                .onAppear { faviconCache.requestIcon(for: result.bookmark.url) }
+                                .onAppear { faviconCache.requestIcon(for: result.primaryBookmark.url) }
                             }
                         }
                     }
@@ -230,7 +341,9 @@ struct BookmarkView: View {
 }
 
 struct BookmarkRow: View {
-    let item: Bookmark
+    let displayName: String
+    let displayURL: String
+    let source: Bookmark.Source
     let query: String
     let selected: Bool
     let icon: NSImage?
@@ -252,7 +365,7 @@ struct BookmarkRow: View {
                         .padding(3)
                 } else {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(item.source == .zen ? Color.orange.opacity(0.25) : Color.accentColor.opacity(0.28))
+                        .fill(source == .zen ? Color.orange.opacity(0.25) : Color.accentColor.opacity(0.28))
                     Image(systemName: "globe")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.primary.opacity(0.85))
@@ -262,7 +375,7 @@ struct BookmarkRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(highlightedName)
-                Text(item.url)
+                Text(displayURL)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -293,8 +406,8 @@ struct BookmarkRow: View {
     }
 
     private var highlightedName: AttributedString {
-        let chars = Array(item.name)
-        let matched = Set(FuzzyMatcher.matchedIndices(query: query, candidate: item.name) ?? [])
+        let chars = Array(displayName)
+        let matched = Set(FuzzyMatcher.matchedIndices(query: query, candidate: displayName) ?? [])
         var result = AttributedString()
         for (index, char) in chars.enumerated() {
             var piece = AttributedString(String(char))
