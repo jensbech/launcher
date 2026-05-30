@@ -144,6 +144,7 @@ public struct Config: Codable, Equatable {
     public var audioSwitcherEnabled: Bool
     public var statusStripEnabled: Bool
     public var disabledDeviceIDs: Set<String>
+    public var sleepCommandsEnabled: Bool
 
     public static let defaultBackdropIntensity: Double = 0.6
     public static let defaultPsychedelicIntensity: Double = 0.7
@@ -162,7 +163,8 @@ public struct Config: Codable, Equatable {
         devicesEnabled: Bool = false,
         audioSwitcherEnabled: Bool = true,
         statusStripEnabled: Bool = false,
-        disabledDeviceIDs: Set<String> = []
+        disabledDeviceIDs: Set<String> = [],
+        sleepCommandsEnabled: Bool = false
     ) {
         self.disabledBundleIDs = disabledBundleIDs
         self.launchAtLogin = launchAtLogin
@@ -178,6 +180,7 @@ public struct Config: Codable, Equatable {
         self.audioSwitcherEnabled = audioSwitcherEnabled
         self.statusStripEnabled = statusStripEnabled
         self.disabledDeviceIDs = disabledDeviceIDs
+        self.sleepCommandsEnabled = sleepCommandsEnabled
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -195,6 +198,7 @@ public struct Config: Codable, Equatable {
         case audioSwitcherEnabled
         case statusStripEnabled
         case disabledDeviceIDs
+        case sleepCommandsEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -215,6 +219,7 @@ public struct Config: Codable, Equatable {
         self.audioSwitcherEnabled = try container.decodeIfPresent(Bool.self, forKey: .audioSwitcherEnabled) ?? true
         self.statusStripEnabled = try container.decodeIfPresent(Bool.self, forKey: .statusStripEnabled) ?? false
         self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
+        self.sleepCommandsEnabled = try container.decodeIfPresent(Bool.self, forKey: .sleepCommandsEnabled) ?? false
     }
 }
 

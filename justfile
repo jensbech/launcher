@@ -18,6 +18,9 @@ run: build
 install:
     ./scripts/install-app.sh
 
+sudoers:
+    ./scripts/setup-sudoers.sh
+
 dev:
     swift run Sift
 

@@ -24,14 +24,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = SettingsWindowController(
             store: store,
             bookmarkStore: bookmarkStore,
-            onHotkeysChanged: { [weak self] in self?.rebindHotkeys() }
+            onHotkeysChanged: { [weak self] in self?.rebindHotkeys() },
+            onSleepConfigChanged: { [weak self] in self?.menuBar.refreshTint() }
         )
         menuBar = MenuBarController(
+            store: store,
             onSettings: { [weak self] in self?.settings.show() },
             onQuit: { NSApp.terminate(nil) }
         )
         hotkeys = HotkeyManager()
         rebindHotkeys()
+        SleepService.shared.startWatching()
         showFirstRunHintIfNeeded()
     }
 

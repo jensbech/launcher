@@ -7,11 +7,13 @@ final class SiftViewModel: ObservableObject {
     enum Result: Identifiable {
         case app(AppItem, FuzzyMatch)
         case device(DeviceItem, FuzzyMatch)
+        case sleep(SleepCommand, FuzzyMatch)
 
         var id: String {
             switch self {
             case .app(let item, _): return "app:" + item.id
             case .device(let item, _): return item.id
+            case .sleep(let cmd, _): return cmd.id
             }
         }
 
@@ -19,6 +21,7 @@ final class SiftViewModel: ObservableObject {
             switch self {
             case .app(_, let m): return m.missed
             case .device(_, let m): return m.missed
+            case .sleep(_, let m): return m.missed
             }
         }
     }
@@ -30,6 +33,8 @@ final class SiftViewModel: ObservableObject {
     @Published var statusDevices: [DeviceItem] = []
     @Published var devicesEnabled: Bool = false
     @Published var statusStripEnabled: Bool = false
+    @Published var sleepCommandsEnabled: Bool = false
+    @Published var sleepDisabled: Bool = false
 
     var onLaunch: ((AppItem) -> Void)?
     var onEscape: (() -> Void)?
@@ -68,6 +73,7 @@ final class SiftViewModel: ObservableObject {
         devicesEnabled = config.devicesEnabled
         statusStripEnabled = config.statusStripEnabled
         audioSwitcherEnabled = config.audioSwitcherEnabled
+        sleepCommandsEnabled = config.sleepCommandsEnabled
         usage = usageStore.load()
         focusToken &+= 1
         refreshIndex()
@@ -76,6 +82,12 @@ final class SiftViewModel: ObservableObject {
         } else {
             devices = []
             statusDevices = []
+        }
+        if sleepCommandsEnabled {
+            SleepService.shared.refresh()
+            sleepDisabled = SleepService.shared.isDisabled
+        } else {
+            sleepDisabled = false
         }
     }
 
@@ -102,9 +114,18 @@ final class SiftViewModel: ObservableObject {
             deviceMatches = []
         }
 
+        let sleepMatches: [(SleepCommand, FuzzyMatch)]
+        if sleepCommandsEnabled, !value.isEmpty {
+            let commands = SleepCommand.available(isDisabled: sleepDisabled)
+            sleepMatches = FuzzyMatcher.search(value, in: commands, name: { $0.name })
+        } else {
+            sleepMatches = []
+        }
+
         var merged: [Result] = []
         merged.append(contentsOf: appMatches.map { Result.app($0.0, $0.1) })
         merged.append(contentsOf: deviceMatches.map { Result.device($0.0, $0.1) })
+        merged.append(contentsOf: sleepMatches.map { Result.sleep($0.0, $0.1) })
 
         results = Array(merged.prefix(100))
         DebugLog.write("SiftVM.updateQuery matched=\(merged.count) results=\(results.count)")
@@ -131,7 +152,21 @@ final class SiftViewModel: ObservableObject {
         case .device(let item, _):
             activate(device: item)
             onDeviceActivated?()
+        case .sleep(let cmd, _):
+            cmd.perform()
+            sleepDisabled = SleepService.shared.isDisabled
+            onDeviceActivated?()
         }
+    }
+
+    func toggleSleep() {
+        guard sleepCommandsEnabled else { return }
+        if sleepDisabled {
+            SleepService.shared.enable()
+        } else {
+            SleepService.shared.disable()
+        }
+        sleepDisabled = SleepService.shared.isDisabled
     }
 
     private func activate(device: DeviceItem) {
@@ -165,6 +200,9 @@ struct SiftView: View {
                     onSubmit: { viewModel.activateSelection() },
                     onCancel: { viewModel.escape() }
                 )
+                if viewModel.sleepCommandsEnabled {
+                    SleepEyeButton(viewModel: viewModel)
+                }
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 16)
@@ -293,6 +331,15 @@ struct ResultRow: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(device.isActive ? Color.accentColor : .white.opacity(0.75))
             }
+        case .sleep(let cmd, _):
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color(red: 1.0, green: 0.82, blue: 0.18).opacity(0.18))
+                    .frame(width: 32, height: 32)
+                Image(systemName: cmd.systemImage)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color(red: 1.0, green: 0.82, blue: 0.18))
+            }
         }
     }
 
@@ -325,6 +372,11 @@ struct ResultRow: View {
                     .tracking(1.4)
                     .foregroundStyle(.white.opacity(0.7))
             }
+        case .sleep:
+            Text("SYSTEM")
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .tracking(1.4)
+                .foregroundStyle(Color(red: 1.0, green: 0.82, blue: 0.18).opacity(0.85))
         }
     }
 
@@ -332,6 +384,7 @@ struct ResultRow: View {
         switch result {
         case .app(let item, _): return item.name
         case .device(let device, _): return device.name
+        case .sleep(let cmd, _): return cmd.name
         }
     }
 
@@ -351,5 +404,42 @@ struct ResultRow: View {
             result += piece
         }
         return result
+    }
+}
+
+private struct SleepEyeButton: View {
+    @ObservedObject var viewModel: SiftViewModel
+    @State private var hover = false
+
+    private static let yellow = Color(red: 1.0, green: 0.82, blue: 0.18)
+
+    var body: some View {
+        Button {
+            viewModel.toggleSleep()
+        } label: {
+            Image(systemName: "eye.fill")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(viewModel.sleepDisabled
+                    ? Self.yellow
+                    : Color.white.opacity(hover ? 0.55 : 0.32))
+                .shadow(color: viewModel.sleepDisabled
+                    ? Self.yellow.opacity(0.5)
+                    : .clear, radius: 3)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(hover ? Color.white.opacity(0.06) : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { hover = $0 }
+        .help(viewModel.sleepDisabled
+            ? "Sleep is disabled — click to re-enable"
+            : "Sleep is enabled — click to keep your Mac awake")
+        .animation(.easeOut(duration: 0.12), value: hover)
+        .animation(.easeOut(duration: 0.18), value: viewModel.sleepDisabled)
     }
 }

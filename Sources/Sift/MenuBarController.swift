@@ -1,14 +1,17 @@
 import AppKit
 import SwiftUI
+import SiftCore
 
 final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let onSettings: () -> Void
     private let onQuit: () -> Void
+    private let store: Store
     private var eventMonitor: Any?
 
-    init(onSettings: @escaping () -> Void, onQuit: @escaping () -> Void) {
+    init(store: Store, onSettings: @escaping () -> Void, onQuit: @escaping () -> Void) {
+        self.store = store
         self.onSettings = onSettings
         self.onQuit = onQuit
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -16,8 +19,6 @@ final class MenuBarController: NSObject {
         super.init()
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "magnifyingglass",
-                                   accessibilityDescription: "Sift")
             button.target = self
             button.action = #selector(toggle(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -40,6 +41,35 @@ final class MenuBarController: NSObject {
         hosting.view.frame = NSRect(x: 0, y: 0, width: StatusMenuView.size.width, height: StatusMenuView.size.height)
         popover.contentViewController = hosting
         popover.contentSize = StatusMenuView.size
+
+        Task { @MainActor in
+            SleepService.shared.onStateChange = { [weak self] in self?.refreshTint() }
+            self.refreshTint()
+        }
+    }
+
+    @MainActor
+    func refreshTint() {
+        guard let button = statusItem.button else { return }
+        let config = store.load()
+        let highlight = config.sleepCommandsEnabled && SleepService.shared.isDisabled
+
+        let symbolName = "magnifyingglass"
+        let description = "Sift"
+
+        if highlight {
+            let yellow = NSColor(srgbRed: 1.0, green: 0.82, blue: 0.18, alpha: 1.0)
+            let symbolConfig = NSImage.SymbolConfiguration(paletteColors: [yellow])
+            let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)?
+                .withSymbolConfiguration(symbolConfig)
+            image?.isTemplate = false
+            button.image = image
+        } else {
+            let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: description)
+            image?.isTemplate = true
+            button.image = image
+        }
+        button.contentTintColor = nil
     }
 
     @objc private func toggle(_ sender: Any?) {

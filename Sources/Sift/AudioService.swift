@@ -15,7 +15,7 @@ enum AudioService {
                 id: idPrefix + String(id),
                 name: name,
                 kind: .audioOutput,
-                category: categorize(name: name),
+                category: categorize(id: id, name: name),
                 isActive: id == defaultID
             )
         }
@@ -61,13 +61,32 @@ enum AudioService {
 
     private static func isOutputDevice(_ id: AudioDeviceID) -> Bool {
         var addr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreams,
+            mSelector: kAudioDevicePropertyStreamConfiguration,
             mScope: kAudioDevicePropertyScopeOutput,
             mElement: kAudioObjectPropertyElementMain
         )
         var size: UInt32 = 0
-        let status = AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size)
-        return status == noErr && size > 0
+        guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else {
+            return false
+        }
+
+        let raw = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(size),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { raw.deallocate() }
+
+        guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, raw) == noErr else {
+            return false
+        }
+
+        let bufferList = UnsafeMutableAudioBufferListPointer(
+            raw.bindMemory(to: AudioBufferList.self, capacity: 1)
+        )
+        for buffer in bufferList where buffer.mNumberChannels > 0 {
+            return true
+        }
+        return false
     }
 
     private static func deviceName(_ id: AudioDeviceID) -> String? {
@@ -98,11 +117,31 @@ enum AudioService {
         return id
     }
 
-    private static func categorize(name: String) -> DeviceCategory {
+    private static func categorize(id: AudioDeviceID, name: String) -> DeviceCategory {
+        let transport = transportType(id)
+        if transport == kAudioDeviceTransportTypeAirPlay { return .airplay }
+        if transport == kAudioDeviceTransportTypeBuiltIn { return .builtIn }
+        if transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE {
+            let lower = name.lowercased()
+            if lower.contains("airpod") || lower.contains("buds") { return .earbuds }
+            return .headphones
+        }
         let lower = name.lowercased()
-        if lower.contains("airpods") || lower.contains("buds") { return .earbuds }
+        if lower.contains("airpod") || lower.contains("buds") { return .earbuds }
         if lower.contains("headphone") || lower.contains("beats") { return .headphones }
-        if lower.contains("speaker") || lower.contains("homepod") { return .speaker }
+        if lower.contains("homepod") || lower.contains("speaker") { return .speaker }
         return .audio
+    }
+
+    private static func transportType(_ id: AudioDeviceID) -> UInt32 {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var t: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        _ = AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &t)
+        return t
     }
 }

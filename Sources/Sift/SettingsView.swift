@@ -22,15 +22,24 @@ final class SettingsViewModel: ObservableObject {
     @Published var audioSwitcherEnabled: Bool = true
     @Published var disabledDeviceIDs: Set<String> = []
     @Published var pairedDevices: [DeviceItem] = []
+    @Published var sleepCommandsEnabled: Bool = false
+    @Published var sudoersConfigured: Bool = false
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
     private let onHotkeysChanged: () -> Void
+    private let onSleepConfigChanged: () -> Void
 
-    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore(), onHotkeysChanged: @escaping () -> Void = {}) {
+    init(
+        store: Store,
+        bookmarkStore: BookmarkStore = BookmarkStore(),
+        onHotkeysChanged: @escaping () -> Void = {},
+        onSleepConfigChanged: @escaping () -> Void = {}
+    ) {
         self.store = store
         self.bookmarkStore = bookmarkStore
         self.onHotkeysChanged = onHotkeysChanged
+        self.onSleepConfigChanged = onSleepConfigChanged
         let config = store.load()
         self.disabled = config.disabledBundleIDs
         self.launchAtLogin = config.launchAtLogin
@@ -46,6 +55,8 @@ final class SettingsViewModel: ObservableObject {
         self.statusStripEnabled = config.statusStripEnabled
         self.audioSwitcherEnabled = config.audioSwitcherEnabled
         self.disabledDeviceIDs = config.disabledDeviceIDs
+        self.sleepCommandsEnabled = config.sleepCommandsEnabled
+        self.sudoersConfigured = Self.sudoersRuleAvailable()
         self.managedBookmarks = bookmarkStore.load()
         self.apps = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
     }
@@ -67,6 +78,34 @@ final class SettingsViewModel: ObservableObject {
     func setStatusStripEnabled(_ value: Bool) {
         statusStripEnabled = value
         persist()
+    }
+
+    func setSleepCommandsEnabled(_ value: Bool) {
+        sleepCommandsEnabled = value
+        persist()
+        onSleepConfigChanged()
+    }
+
+    func refreshSudoersStatus() {
+        sudoersConfigured = Self.sudoersRuleAvailable()
+    }
+
+    private static func sudoersRuleAvailable() -> Bool {
+        if FileManager.default.fileExists(atPath: "/etc/sudoers.d/sift") {
+            return true
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        task.arguments = ["-n", "-l", "/usr/bin/pmset", "disablesleep", "1"]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            task.waitUntilExit()
+            return task.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     func isDeviceEnabled(_ device: DeviceItem) -> Bool {
@@ -184,7 +223,8 @@ final class SettingsViewModel: ObservableObject {
             devicesEnabled: devicesEnabled,
             audioSwitcherEnabled: audioSwitcherEnabled,
             statusStripEnabled: statusStripEnabled,
-            disabledDeviceIDs: disabledDeviceIDs
+            disabledDeviceIDs: disabledDeviceIDs,
+            sleepCommandsEnabled: sleepCommandsEnabled
         ))
     }
 
@@ -814,6 +854,26 @@ private struct GeneralPane: View {
                 )
             }
 
+            Card(title: "SLEEP", caption: viewModel.sleepCommandsEnabled ? "ON" : "OFF") {
+                VStack(alignment: .leading, spacing: 14) {
+                    ToggleRow(
+                        title: "Search sleep controls",
+                        description: "Adds \"Disable sleep\" and \"Enable sleep\" to the launcher. When sleep is disabled, a yellow eye appears at the right of the search bar — click it to toggle back.",
+                        isOn: Binding(
+                            get: { viewModel.sleepCommandsEnabled },
+                            set: { viewModel.setSleepCommandsEnabled($0) }
+                        )
+                    )
+
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+
+                    SudoersStatusRow(viewModel: viewModel)
+                }
+                .onAppear { viewModel.refreshSudoersStatus() }
+            }
+
             Card(title: "BACKDROP") {
                 VStack(alignment: .leading, spacing: 14) {
                     ToggleRow(
@@ -1346,6 +1406,132 @@ private struct DevicePickerRow: View {
         )
         .contentShape(Rectangle())
         .onHover { hover = $0 }
+    }
+}
+
+private struct SudoersStatusRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    private static let manualCommand = #"echo "$(whoami) ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1" | sudo tee /etc/sudoers.d/sift > /dev/null && sudo chmod 0440 /etc/sudoers.d/sift"#
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(systemName: viewModel.sudoersConfigured
+                    ? "checkmark.circle.fill"
+                    : "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(viewModel.sudoersConfigured
+                        ? Color(red: 0.4, green: 0.85, blue: 0.55)
+                        : Color(red: 1.0, green: 0.78, blue: 0.25))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sudoers rule")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                    Text(viewModel.sudoersConfigured
+                        ? "/etc/sudoers.d/sift is installed — toggling works without a password prompt."
+                        : "Not installed. Sift can't toggle sleep until the rule is created.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button {
+                    viewModel.refreshSudoersStatus()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .stroke(Palette.hairline, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Re-check status")
+            }
+
+            if !viewModel.sudoersConfigured {
+                VStack(alignment: .leading, spacing: 10) {
+                    CopyableCommand(
+                        label: "FROM SOURCE",
+                        command: "just sudoers"
+                    )
+                    CopyableCommand(
+                        label: "ONE-LINER (NO SOURCE)",
+                        command: Self.manualCommand
+                    )
+                }
+            }
+        }
+    }
+}
+
+private struct CopyableCommand: View {
+    let label: String
+    let command: String
+    @State private var justCopied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .tracking(1.6)
+                .foregroundStyle(Palette.muted)
+
+            HStack(alignment: .top, spacing: 10) {
+                Text(command)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                    justCopied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                        justCopied = false
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(justCopied ? "Copied" : "Copy")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(justCopied
+                        ? Color(red: 0.4, green: 0.85, blue: 0.55)
+                        : .white.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Palette.hairline, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.black.opacity(0.28))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(Palette.hairline, lineWidth: 1)
+            )
+            .animation(.easeOut(duration: 0.18), value: justCopied)
+        }
     }
 }
 

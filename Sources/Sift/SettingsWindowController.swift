@@ -8,11 +8,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let store: Store
     private let bookmarkStore: BookmarkStore
     private let onHotkeysChanged: () -> Void
+    private let onSleepConfigChanged: () -> Void
 
-    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore(), onHotkeysChanged: @escaping () -> Void = {}) {
+    init(
+        store: Store,
+        bookmarkStore: BookmarkStore = BookmarkStore(),
+        onHotkeysChanged: @escaping () -> Void = {},
+        onSleepConfigChanged: @escaping () -> Void = {}
+    ) {
         self.store = store
         self.bookmarkStore = bookmarkStore
         self.onHotkeysChanged = onHotkeysChanged
+        self.onSleepConfigChanged = onSleepConfigChanged
         super.init()
     }
 
@@ -21,7 +28,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let viewModel = SettingsViewModel(
                 store: self.store,
                 bookmarkStore: self.bookmarkStore,
-                onHotkeysChanged: self.onHotkeysChanged
+                onHotkeysChanged: self.onHotkeysChanged,
+                onSleepConfigChanged: self.onSleepConfigChanged
             )
             let hosting = NSHostingController(rootView: SettingsView(viewModel: viewModel))
             let win = NSWindow(contentViewController: hosting)

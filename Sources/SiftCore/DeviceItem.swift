@@ -6,7 +6,8 @@ public enum DeviceKind: String, Codable, Sendable, Hashable {
 }
 
 public enum DeviceCategory: String, Codable, Sendable, Hashable {
-    case headphones, speaker, earbuds, watch, mouse, keyboard, phone, controller, audio, unknown
+    case headphones, speaker, earbuds, watch, mouse, keyboard, phone, controller
+    case audio, airplay, builtIn, unknown
 
     public var systemImageName: String {
         switch self {
@@ -19,6 +20,8 @@ public enum DeviceCategory: String, Codable, Sendable, Hashable {
         case .phone: return "iphone"
         case .controller: return "gamecontroller"
         case .audio: return "speaker.wave.2.fill"
+        case .airplay: return "airplayaudio"
+        case .builtIn: return "laptopcomputer"
         case .unknown: return "dot.radiowaves.right"
         }
     }
