@@ -17,8 +17,10 @@ final class SettingsViewModel: ObservableObject {
     @Published var managedBookmarks: [Bookmark] = []
     @Published var launcherHotkey: Hotkey = .defaultLauncher
     @Published var bookmarksHotkey: Hotkey = .defaultBookmarks
+    @Published var combinedSearch: Bool = false
     @Published var devicesEnabled: Bool = false
     @Published var statusStripEnabled: Bool = false
+    @Published var hideStripWhenBuiltInOnly: Bool = true
     @Published var audioSwitcherEnabled: Bool = true
     @Published var disabledDeviceIDs: Set<String> = []
     @Published var pairedDevices: [DeviceItem] = []
@@ -51,8 +53,10 @@ final class SettingsViewModel: ObservableObject {
         self.includeZenBookmarks = config.includeZenBookmarks
         self.launcherHotkey = config.launcherHotkey
         self.bookmarksHotkey = config.bookmarksHotkey
+        self.combinedSearch = config.combinedSearch
         self.devicesEnabled = config.devicesEnabled
         self.statusStripEnabled = config.statusStripEnabled
+        self.hideStripWhenBuiltInOnly = config.hideStripWhenBuiltInOnly
         self.audioSwitcherEnabled = config.audioSwitcherEnabled
         self.disabledDeviceIDs = config.disabledDeviceIDs
         self.sleepCommandsEnabled = config.sleepCommandsEnabled
@@ -77,6 +81,11 @@ final class SettingsViewModel: ObservableObject {
 
     func setStatusStripEnabled(_ value: Bool) {
         statusStripEnabled = value
+        persist()
+    }
+
+    func setHideStripWhenBuiltInOnly(_ value: Bool) {
+        hideStripWhenBuiltInOnly = value
         persist()
     }
 
@@ -194,6 +203,12 @@ final class SettingsViewModel: ObservableObject {
         onHotkeysChanged()
     }
 
+    func setCombinedSearch(_ value: Bool) {
+        combinedSearch = value
+        persist()
+        onHotkeysChanged()
+    }
+
     func addBookmark(name: String, url: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -220,9 +235,11 @@ final class SettingsViewModel: ObservableObject {
             includeZenBookmarks: includeZenBookmarks,
             launcherHotkey: launcherHotkey,
             bookmarksHotkey: bookmarksHotkey,
+            combinedSearch: combinedSearch,
             devicesEnabled: devicesEnabled,
             audioSwitcherEnabled: audioSwitcherEnabled,
             statusStripEnabled: statusStripEnabled,
+            hideStripWhenBuiltInOnly: hideStripWhenBuiltInOnly,
             disabledDeviceIDs: disabledDeviceIDs,
             sleepCommandsEnabled: sleepCommandsEnabled
         ))
@@ -1266,14 +1283,31 @@ private struct DevicesPane: View {
             EmptyView()
                 .onAppear { viewModel.refreshPairedDevices() }
             Card(title: "STATUS STRIP", caption: viewModel.statusStripEnabled ? "ON" : "OFF") {
-                ToggleRow(
-                    title: "Show connected devices strip",
-                    description: "When the search field is empty, a strip under it lists your currently-connected Bluetooth devices and the active audio output. Display only — nothing to click.",
-                    isOn: Binding(
-                        get: { viewModel.statusStripEnabled },
-                        set: { viewModel.setStatusStripEnabled($0) }
+                VStack(spacing: 14) {
+                    ToggleRow(
+                        title: "Show \"now playing\" strip",
+                        description: "When the search field is empty and audio is actively playing, a strip under it shows the output that's producing sound right now. Hides automatically when nothing is playing. Display only.",
+                        isOn: Binding(
+                            get: { viewModel.statusStripEnabled },
+                            set: { viewModel.setStatusStripEnabled($0) }
+                        )
                     )
-                )
+
+                    Rectangle()
+                        .fill(Palette.hairline)
+                        .frame(height: 1)
+
+                    ToggleRow(
+                        title: "Hide when built-in speakers are playing",
+                        description: "Stay hidden even when audio is playing, if it's playing through the MacBook's own speakers. Only surface for external outputs (AirPods, AirPlay, headphones, etc).",
+                        isOn: Binding(
+                            get: { viewModel.hideStripWhenBuiltInOnly },
+                            set: { viewModel.setHideStripWhenBuiltInOnly($0) }
+                        )
+                    )
+                    .opacity(viewModel.statusStripEnabled ? 1 : 0.5)
+                    .disabled(!viewModel.statusStripEnabled)
+                }
             }
 
             Card(title: "SEARCH", caption: viewModel.devicesEnabled ? "ON" : "OFF") {
@@ -1566,6 +1600,17 @@ private struct ShortcutsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Card(title: "MODE", caption: viewModel.combinedSearch ? "COMBINED" : "SEPARATE") {
+                ToggleRow(
+                    title: "One shortcut for everything",
+                    description: "Mix bookmarks into the launcher's search results. The dedicated bookmarks shortcut is disabled while this is on.",
+                    isOn: Binding(
+                        get: { viewModel.combinedSearch },
+                        set: { viewModel.setCombinedSearch($0) }
+                    )
+                )
+            }
+
             Card(title: "GLOBAL", caption: "Press a combination with at least one modifier") {
                 VStack(spacing: 14) {
                     ShortcutRow(
@@ -1583,12 +1628,16 @@ private struct ShortcutsPane: View {
 
                     ShortcutRow(
                         label: "Open bookmarks",
-                        sublabel: "Toggles the bookmark search panel.",
+                        sublabel: viewModel.combinedSearch
+                            ? "Disabled — combined mode mixes bookmarks into the launcher."
+                            : "Toggles the bookmark search panel.",
                         binding: Binding(
                             get: { viewModel.bookmarksHotkey },
                             set: { viewModel.setBookmarksHotkey($0) }
                         )
                     )
+                    .opacity(viewModel.combinedSearch ? 0.45 : 1)
+                    .disabled(viewModel.combinedSearch)
                 }
             }
 

@@ -46,12 +46,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             id: Self.launcherHotkeyID,
             label: "Launcher (\(config.launcherHotkey.displayString()))"
         ) { [weak self] in self?.launcher.toggle() })
-        hotkeys.register(.init(
-            keyCode: config.bookmarksHotkey.keyCode,
-            modifiers: config.bookmarksHotkey.modifiers,
-            id: Self.bookmarksHotkeyID,
-            label: "Bookmarks (\(config.bookmarksHotkey.displayString()))"
-        ) { [weak self] in self?.bookmarks.toggle() })
+        if config.combinedSearch {
+            hotkeys.unregister(id: Self.bookmarksHotkeyID)
+        } else {
+            hotkeys.register(.init(
+                keyCode: config.bookmarksHotkey.keyCode,
+                modifiers: config.bookmarksHotkey.modifiers,
+                id: Self.bookmarksHotkeyID,
+                label: "Bookmarks (\(config.bookmarksHotkey.displayString()))"
+            ) { [weak self] in self?.bookmarks.toggle() })
+        }
     }
 
     private func showFirstRunHintIfNeeded() {

@@ -4,16 +4,66 @@ import SiftCore
 
 @MainActor
 final class SiftViewModel: ObservableObject {
+    struct BookmarkSearchResult: Identifiable {
+        enum Kind {
+            case single(Bookmark)
+            case envGroup(defaultBookmark: Bookmark, variants: [(env: String, bookmark: Bookmark)], templateURL: String)
+        }
+        let kind: Kind
+        let match: FuzzyMatch
+
+        var id: String {
+            switch kind {
+            case .single(let b): return b.id
+            case .envGroup(_, _, let template): return "env:\(template)"
+            }
+        }
+
+        var primaryBookmark: Bookmark {
+            switch kind {
+            case .single(let b): return b
+            case .envGroup(let b, _, _): return b
+            }
+        }
+
+        var displayName: String {
+            switch kind {
+            case .single(let b): return b.name
+            case .envGroup(let b, _, _): return BookmarkEnv.strippedTitle(b.name)
+            }
+        }
+
+        var displayURL: String {
+            switch kind {
+            case .single(let b): return b.url
+            case .envGroup(_, _, let template): return template
+            }
+        }
+
+        var isEnvGroup: Bool {
+            if case .envGroup = kind { return true }
+            return false
+        }
+    }
+
+    struct ActionsState: Equatable {
+        let source: Bookmark
+        let actions: [BookmarkAction]
+        var selectedIndex: Int
+    }
+
     enum Result: Identifiable {
         case app(AppItem, FuzzyMatch)
         case device(DeviceItem, FuzzyMatch)
         case sleep(SleepCommand, FuzzyMatch)
+        case bookmark(BookmarkSearchResult)
 
         var id: String {
             switch self {
             case .app(let item, _): return "app:" + item.id
             case .device(let item, _): return item.id
             case .sleep(let cmd, _): return cmd.id
+            case .bookmark(let r): return "bookmark:" + r.id
             }
         }
 
@@ -22,6 +72,16 @@ final class SiftViewModel: ObservableObject {
             case .app(_, let m): return m.missed
             case .device(_, let m): return m.missed
             case .sleep(_, let m): return m.missed
+            case .bookmark(let r): return r.match.missed
+            }
+        }
+
+        var matchedInPrimary: Bool {
+            switch self {
+            case .app(_, let m): return !m.matched.isEmpty
+            case .device(_, let m): return !m.matched.isEmpty
+            case .sleep(_, let m): return !m.matched.isEmpty
+            case .bookmark(let r): return !r.match.matched.isEmpty
             }
         }
     }
@@ -33,8 +93,11 @@ final class SiftViewModel: ObservableObject {
     @Published var statusDevices: [DeviceItem] = []
     @Published var devicesEnabled: Bool = false
     @Published var statusStripEnabled: Bool = false
+    @Published var hideStripWhenBuiltInOnly: Bool = true
     @Published var sleepCommandsEnabled: Bool = false
     @Published var sleepDisabled: Bool = false
+    @Published var combinedSearch: Bool = false
+    @Published var actionsState: ActionsState? = nil
 
     var onLaunch: ((AppItem) -> Void)?
     var onEscape: (() -> Void)?
@@ -42,16 +105,19 @@ final class SiftViewModel: ObservableObject {
 
     private let store: Store
     private let usageStore: UsageStore
+    private let bookmarkStore: BookmarkStore
     private var usage: UsageStats
     private var allApps: [AppItem] = []
     private var disabledIDs: Set<String> = []
     private var devices: [DeviceItem] = []
     private var disabledDeviceIDs: Set<String> = []
     private var audioSwitcherEnabled: Bool = true
+    private var bookmarks: [Bookmark] = []
 
-    init(store: Store, usageStore: UsageStore = UsageStore()) {
+    init(store: Store, usageStore: UsageStore = UsageStore(), bookmarkStore: BookmarkStore = BookmarkStore()) {
         self.store = store
         self.usageStore = usageStore
+        self.bookmarkStore = bookmarkStore
         self.usage = usageStore.load()
         refreshIndex()
     }
@@ -72,8 +138,10 @@ final class SiftViewModel: ObservableObject {
         disabledDeviceIDs = config.disabledDeviceIDs
         devicesEnabled = config.devicesEnabled
         statusStripEnabled = config.statusStripEnabled
+        hideStripWhenBuiltInOnly = config.hideStripWhenBuiltInOnly
         audioSwitcherEnabled = config.audioSwitcherEnabled
         sleepCommandsEnabled = config.sleepCommandsEnabled
+        combinedSearch = config.combinedSearch
         usage = usageStore.load()
         focusToken &+= 1
         refreshIndex()
@@ -89,17 +157,44 @@ final class SiftViewModel: ObservableObject {
         } else {
             sleepDisabled = false
         }
+        if combinedSearch {
+            refreshBookmarks(config: config)
+        } else {
+            bookmarks = []
+        }
+    }
+
+    private func refreshBookmarks(config: Config) {
+        let managed = bookmarkStore.load()
+        let zen: [Bookmark] = config.includeZenBookmarks ? ZenBookmarkImporter.load() : []
+        bookmarks = BookmarkIndex.merged(managed: managed, imported: zen)
+        FaviconCache.shared.prefetch(bookmarks: bookmarks)
     }
 
     func refreshDevices() {
         let bt = BluetoothService.pairedDevices()
-        let audio = audioSwitcherEnabled ? AudioService.outputDevices() : []
-        devices = (bt + audio).filter { !disabledDeviceIDs.contains($0.id) }
-        statusDevices = devices.filter { $0.isActive }
+        let audio = AudioService.outputDevices()
+        let combinedForSearch = bt + (audioSwitcherEnabled ? audio : [])
+        devices = combinedForSearch.filter { !disabledDeviceIDs.contains($0.id) }
+        statusDevices = (bt + audio).filter { $0.isActive && !disabledDeviceIDs.contains($0.id) }
+    }
+
+    var visibleStatusDevices: [DeviceItem] {
+        let playing = statusDevices.filter { device in
+            device.kind == .audioOutput && AudioService.isRunning(deviceID: device.id)
+        }
+        guard !playing.isEmpty else { return [] }
+
+        if hideStripWhenBuiltInOnly {
+            let nonBuiltIn = playing.contains { $0.category != .builtIn }
+            return nonBuiltIn ? playing : []
+        }
+        return playing
     }
 
     func updateQuery(_ value: String) {
         DebugLog.write("SiftVM.updateQuery in='\(value)' prevQuery='\(query)'")
+        if actionsState != nil { actionsState = nil }
         query = value
 
         let appPool = allApps.filter { !disabledIDs.contains($0.id) }
@@ -122,8 +217,17 @@ final class SiftViewModel: ObservableObject {
             sleepMatches = []
         }
 
+        let bookmarkResults: [BookmarkSearchResult]
+        if combinedSearch, !value.isEmpty {
+            let raw = FuzzyMatcher.search(value, in: bookmarks, name: { $0.name }, secondary: { $0.url })
+            bookmarkResults = Self.groupedBookmarkResults(raw)
+        } else {
+            bookmarkResults = []
+        }
+
         var merged: [Result] = []
         merged.append(contentsOf: appMatches.map { Result.app($0.0, $0.1) })
+        merged.append(contentsOf: bookmarkResults.map { Result.bookmark($0) })
         merged.append(contentsOf: deviceMatches.map { Result.device($0.0, $0.1) })
         merged.append(contentsOf: sleepMatches.map { Result.sleep($0.0, $0.1) })
 
@@ -133,16 +237,127 @@ final class SiftViewModel: ObservableObject {
     }
 
     func moveDown() {
+        if var state = actionsState {
+            guard !state.actions.isEmpty else { return }
+            state.selectedIndex = min(state.selectedIndex + 1, state.actions.count - 1)
+            actionsState = state
+            return
+        }
         guard !results.isEmpty else { return }
         selectedIndex = min(selectedIndex + 1, results.count - 1)
     }
 
     func moveUp() {
+        if var state = actionsState {
+            guard !state.actions.isEmpty else { return }
+            state.selectedIndex = max(state.selectedIndex - 1, 0)
+            actionsState = state
+            return
+        }
         guard !results.isEmpty else { return }
         selectedIndex = max(selectedIndex - 1, 0)
     }
 
+    func enterActions() {
+        guard actionsState == nil,
+              results.indices.contains(selectedIndex) else { return }
+        guard case .bookmark(let bookmarkResult) = results[selectedIndex] else { return }
+        let actions = Self.actions(for: bookmarkResult)
+        guard !actions.isEmpty else { return }
+        actionsState = ActionsState(
+            source: bookmarkResult.primaryBookmark,
+            actions: actions,
+            selectedIndex: 0
+        )
+    }
+
+    @discardableResult
+    func tryExitActions() -> Bool {
+        guard actionsState != nil else { return false }
+        actionsState = nil
+        return true
+    }
+
+    private static func actions(for result: BookmarkSearchResult) -> [BookmarkAction] {
+        switch result.kind {
+        case .single(let b):
+            return BookmarkActions.actions(for: b)
+        case .envGroup(_, let variants, _):
+            return variants.map { variant in
+                BookmarkAction(
+                    id: "env-\(variant.env)",
+                    title: variant.env.capitalized,
+                    symbol: BookmarkEnv.symbol(forEnv: variant.env),
+                    url: variant.bookmark.url
+                )
+            }
+        }
+    }
+
+    private static func groupedBookmarkResults(_ matches: [(Bookmark, FuzzyMatch)]) -> [BookmarkSearchResult] {
+        struct GroupAccum {
+            var variants: [(env: String, bookmark: Bookmark)] = []
+            var bestMatch: FuzzyMatch
+        }
+
+        var groupOrder: [String] = []
+        var groups: [String: GroupAccum] = [:]
+        var output: [BookmarkSearchResult] = []
+
+        for (bookmark, match) in matches {
+            if let info = BookmarkEnv.info(forURL: bookmark.url) {
+                let key = info.normalized
+                if groups[key] == nil {
+                    groups[key] = GroupAccum(bestMatch: match)
+                    groupOrder.append(key)
+                }
+                var entry = groups[key]!
+                if !entry.variants.contains(where: { $0.env == info.env }) {
+                    entry.variants.append((info.env, bookmark))
+                }
+                if match.score > entry.bestMatch.score || match.missed < entry.bestMatch.missed {
+                    entry.bestMatch = match
+                }
+                groups[key] = entry
+            } else {
+                output.append(BookmarkSearchResult(kind: .single(bookmark), match: match))
+            }
+        }
+
+        for key in groupOrder {
+            guard let entry = groups[key] else { continue }
+            if entry.variants.count >= 2 {
+                let ordered = BookmarkEnv.preferenceOrder.compactMap { env in
+                    entry.variants.first { $0.env == env }
+                } + entry.variants.filter { v in
+                    !BookmarkEnv.preferenceOrder.contains(v.env)
+                }
+                let defaultBookmark = ordered.first?.bookmark ?? entry.variants[0].bookmark
+                output.append(BookmarkSearchResult(
+                    kind: .envGroup(defaultBookmark: defaultBookmark, variants: ordered, templateURL: key),
+                    match: entry.bestMatch
+                ))
+            } else {
+                output.append(BookmarkSearchResult(kind: .single(entry.variants[0].bookmark), match: entry.bestMatch))
+            }
+        }
+
+        output.sort { a, b in
+            if a.match.missed != b.match.missed { return a.match.missed < b.match.missed }
+            if a.match.score != b.match.score { return a.match.score > b.match.score }
+            return a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+        }
+
+        return output
+    }
+
     func activateSelection() {
+        if let state = actionsState {
+            guard state.actions.indices.contains(state.selectedIndex) else { return }
+            openURL(state.actions[state.selectedIndex].url)
+            onDeviceActivated?()
+            return
+        }
         guard results.indices.contains(selectedIndex) else { return }
         switch results[selectedIndex] {
         case .app(let item, _):
@@ -156,6 +371,15 @@ final class SiftViewModel: ObservableObject {
             cmd.perform()
             sleepDisabled = SleepService.shared.isDisabled
             onDeviceActivated?()
+        case .bookmark(let bookmarkResult):
+            openURL(bookmarkResult.primaryBookmark.url)
+            onDeviceActivated?()
+        }
+    }
+
+    private func openURL(_ urlString: String) {
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -180,11 +404,22 @@ final class SiftViewModel: ObservableObject {
         }
     }
 
-    func escape() { onEscape?() }
+    func escape() {
+        if tryExitActions() { return }
+        onEscape?()
+    }
 }
 
 struct SiftView: View {
     @ObservedObject var viewModel: SiftViewModel
+
+    private static let rowHeight: CGFloat = 48
+    private static let maxRows: CGFloat = 7
+
+    private var resultsHeight: CGFloat {
+        let count = CGFloat(min(viewModel.results.count, Int(Self.maxRows)))
+        return count * Self.rowHeight
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -198,7 +433,9 @@ struct SiftView: View {
                     onMoveUp: { viewModel.moveUp() },
                     onMoveDown: { viewModel.moveDown() },
                     onSubmit: { viewModel.activateSelection() },
-                    onCancel: { viewModel.escape() }
+                    onCancel: { viewModel.escape() },
+                    onMoveRight: { viewModel.enterActions() },
+                    onMoveLeft: { viewModel.tryExitActions() }
                 )
                 if viewModel.sleepCommandsEnabled {
                     SleepEyeButton(viewModel: viewModel)
@@ -207,24 +444,25 @@ struct SiftView: View {
             .padding(.horizontal, 22)
             .padding(.vertical, 16)
 
-            if viewModel.statusStripEnabled && viewModel.query.isEmpty && !viewModel.statusDevices.isEmpty {
+            if viewModel.statusStripEnabled && viewModel.query.isEmpty && !viewModel.visibleStatusDevices.isEmpty {
                 Divider().opacity(0.4)
-                DeviceStatusStrip(devices: viewModel.statusDevices)
+                DeviceStatusStrip(devices: viewModel.visibleStatusDevices)
             }
 
-            if !viewModel.results.isEmpty {
+            if let state = viewModel.actionsState {
+                Divider()
+                InlineActionsList(state: state, viewModel: viewModel)
+            } else if !viewModel.results.isEmpty {
                 Divider()
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(0..<viewModel.results.count, id: \.self) { index in
-                                let result = viewModel.results[index]
+                            ForEach(Array(viewModel.results.enumerated()), id: \.element.id) { index, result in
                                 ResultRow(
                                     result: result,
                                     query: viewModel.query,
                                     selected: index == viewModel.selectedIndex
                                 )
-                                .id(index)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     viewModel.selectedIndex = index
@@ -233,9 +471,11 @@ struct SiftView: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 320)
+                    .frame(height: resultsHeight)
                     .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                        proxy.scrollTo(newIndex)
+                        if viewModel.results.indices.contains(newIndex) {
+                            proxy.scrollTo(viewModel.results[newIndex].id)
+                        }
                     }
                 }
             }
@@ -256,25 +496,24 @@ private struct DeviceStatusStrip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text("CONNECTED")
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                .tracking(1.8)
-                .foregroundStyle(.white.opacity(0.4))
+            HStack(spacing: 6) {
+                PlayingDot()
+                Text("PLAYING")
+                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .tracking(1.8)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
             ForEach(devices) { device in
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(activeColor(for: device))
-                        .frame(width: 6, height: 6)
-                        .shadow(color: activeColor(for: device).opacity(0.7), radius: 3)
+                HStack(spacing: 7) {
                     Image(systemName: device.category.systemImageName)
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(.white.opacity(0.88))
                     Text(device.name)
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.92))
                         .lineLimit(1)
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 9)
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -286,12 +525,22 @@ private struct DeviceStatusStrip: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
     }
+}
 
-    private func activeColor(for device: DeviceItem) -> Color {
-        switch device.kind {
-        case .audioOutput: return Color.accentColor
-        case .bluetooth: return Color(red: 0.4, green: 0.85, blue: 0.55)
-        }
+private struct PlayingDot: View {
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(Color(red: 0.36, green: 0.92, blue: 0.55))
+            .frame(width: 6, height: 6)
+            .shadow(color: Color(red: 0.36, green: 0.92, blue: 0.55).opacity(0.7), radius: pulse ? 4 : 2)
+            .opacity(pulse ? 1 : 0.6)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
     }
 }
 
@@ -300,7 +549,7 @@ struct ResultRow: View {
     let query: String
     let selected: Bool
 
-    private var isApproximate: Bool { result.missed > 0 }
+    private var isApproximate: Bool { result.missed > 0 || !result.matchedInPrimary }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -340,6 +589,8 @@ struct ResultRow: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color(red: 1.0, green: 0.82, blue: 0.18))
             }
+        case .bookmark(let bookmarkResult):
+            BookmarkLeadingIcon(url: bookmarkResult.primaryBookmark.url)
         }
     }
 
@@ -377,7 +628,25 @@ struct ResultRow: View {
                 .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(Color(red: 1.0, green: 0.82, blue: 0.18).opacity(0.85))
+        case .bookmark(let bookmarkResult):
+            HStack(spacing: 6) {
+                Text(displayHost(for: bookmarkResult.displayURL))
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if bookmarkResult.isEnvGroup {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                }
+            }
         }
+    }
+
+    private func displayHost(for url: String) -> String {
+        guard let u = URL(string: url), let host = u.host else { return url }
+        if host.hasPrefix("www.") { return String(host.dropFirst(4)) }
+        return host
     }
 
     private var rawName: String {
@@ -385,6 +654,7 @@ struct ResultRow: View {
         case .app(let item, _): return item.name
         case .device(let device, _): return device.name
         case .sleep(let cmd, _): return cmd.name
+        case .bookmark(let bookmarkResult): return bookmarkResult.displayName
         }
     }
 
@@ -404,6 +674,99 @@ struct ResultRow: View {
             result += piece
         }
         return result
+    }
+}
+
+private struct InlineActionsList: View {
+    let state: SiftViewModel.ActionsState
+    let viewModel: SiftViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(state.source.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer()
+                Text("← to go back")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary.opacity(0.7))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(0.05))
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(0..<state.actions.count, id: \.self) { index in
+                            let action = state.actions[index]
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(Color.primary.opacity(0.10))
+                                    Image(systemName: action.symbol)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundStyle(.primary.opacity(0.9))
+                                }
+                                .frame(width: 32, height: 32)
+                                Text(action.title)
+                                    .font(.system(size: 15))
+                                Spacer()
+                                Text(action.url.replacingOccurrences(of: "https://", with: ""))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 8)
+                            .background(index == state.selectedIndex ? Color.accentColor.opacity(0.35) : Color.clear)
+                            .id(index)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                var s = state
+                                s.selectedIndex = index
+                                viewModel.actionsState = s
+                                viewModel.activateSelection()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+                .onChange(of: state.selectedIndex) { _, newIndex in
+                    proxy.scrollTo(newIndex)
+                }
+            }
+        }
+    }
+}
+
+private struct BookmarkLeadingIcon: View {
+    let url: String
+    @ObservedObject private var faviconCache = FaviconCache.shared
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.white.opacity(0.07))
+                .frame(width: 32, height: 32)
+            if let icon = faviconCache.icon(for: url) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 20, height: 20)
+            } else {
+                Image(systemName: "globe")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+        }
+        .onAppear { faviconCache.requestIcon(for: url) }
     }
 }
 

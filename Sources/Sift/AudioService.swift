@@ -21,6 +21,20 @@ enum AudioService {
         }
     }
 
+    static func isRunning(deviceID: String) -> Bool {
+        let raw = String(deviceID.dropFirst(idPrefix.count))
+        guard let id = AudioDeviceID(raw) else { return false }
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var running: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &running)
+        return status == noErr && running != 0
+    }
+
     static func setActive(deviceID: String) {
         let raw = String(deviceID.dropFirst(idPrefix.count))
         guard var id = AudioDeviceID(raw) else { return }

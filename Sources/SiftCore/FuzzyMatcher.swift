@@ -21,40 +21,61 @@ public struct FuzzyMatcher {
         let c = Array(candidate.lowercased())
         guard !q.isEmpty else { return nil }
 
+        let allowedMiss = allowedMissCount(forQueryLength: q.count)
+
         var qi = 0
         var ci = 0
         var indices: [Int] = []
         var score = 0
         var prevMatch = -2
+        var missed = 0
+        var currentRun = 0
+        var longestRun = 0
 
-        while qi < q.count, ci < c.count {
-            if c[ci] == q[qi] {
-                var bonus = 1
-                if ci == 0 {
-                    bonus += 12
-                } else {
-                    let prev = c[ci - 1]
-                    if prev == " " || prev == "-" || prev == "_" || prev == "." {
-                        bonus += 7
+        while qi < q.count {
+            var found = false
+            var scan = ci
+            while scan < c.count {
+                if c[scan] == q[qi] {
+                    var bonus = 1
+                    if scan == 0 {
+                        bonus += 40
+                    } else {
+                        let prev = c[scan - 1]
+                        if prev == " " || prev == "-" || prev == "_" || prev == "." {
+                            bonus += 30
+                        }
                     }
+                    if prevMatch == scan - 1 {
+                        bonus += 8
+                        currentRun += 1
+                    } else {
+                        currentRun = 1
+                    }
+                    longestRun = max(longestRun, currentRun)
+                    score += bonus
+                    indices.append(scan)
+                    prevMatch = scan
+                    qi += 1
+                    ci = scan + 1
+                    found = true
+                    break
                 }
-                if prevMatch == ci - 1 {
-                    bonus += 5
-                }
-                score += bonus
-                indices.append(ci)
-                prevMatch = ci
-                qi += 1
+                scan += 1
             }
-            ci += 1
+            if !found {
+                missed += 1
+                if missed > allowedMiss { return nil }
+                qi += 1
+                currentRun = 0
+            }
         }
 
-        let missed = q.count - qi
-        let allowedMiss = allowedMissCount(forQueryLength: q.count)
-        guard missed <= allowedMiss else { return nil }
+        if longestRun >= q.count - missed && longestRun >= 2 {
+            score += 30
+        }
 
-        // Each missed char takes a meaningful score hit so exact matches always win.
-        let penalty = missed * 20
+        let penalty = missed * 50
         return FuzzyMatch(score: score - penalty, matched: indices, missed: missed)
     }
 
@@ -143,8 +164,8 @@ public struct FuzzyMatcher {
     }
 
     private static func allowedMissCount(forQueryLength n: Int) -> Int {
-        if n <= 3 { return 0 }
-        if n <= 6 { return 1 }
+        if n <= 4 { return 0 }
+        if n <= 8 { return 1 }
         return 2
     }
 }

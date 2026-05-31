@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import QuartzCore
 
 final class SiftPanel: NSPanel {
     static let width: CGFloat = 560
@@ -30,16 +31,32 @@ final class SiftPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func setContentSize(_ size: NSSize) {
-        super.setContentSize(size)
-        applyAnchor()
+        let target = anchoredFrame(forContentHeight: size.height)
+        guard isVisible, target.size != frame.size else {
+            super.setContentSize(size)
+            applyAnchor()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.0)
+            ctx.allowsImplicitAnimation = true
+            animator().setFrame(target, display: true)
+        }
     }
 
     func applyAnchor() {
-        guard let anchor else { return }
-        let width = SiftPanel.width
-        let originX = anchor.x - width / 2
-        let originY = anchor.y - frame.height
-        setFrame(NSRect(x: originX, y: originY, width: width, height: frame.height), display: false)
+        let target = anchoredFrame(forContentHeight: frame.height)
+        setFrame(target, display: false)
+    }
+
+    private func anchoredFrame(forContentHeight height: CGFloat) -> NSRect {
+        guard let anchor else {
+            return NSRect(origin: frame.origin, size: NSSize(width: SiftPanel.width, height: height))
+        }
+        let originX = anchor.x - SiftPanel.width / 2
+        let originY = anchor.y - height
+        return NSRect(x: originX, y: originY, width: SiftPanel.width, height: height)
     }
 
     override func resignKey() {

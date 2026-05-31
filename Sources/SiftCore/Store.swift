@@ -140,9 +140,11 @@ public struct Config: Codable, Equatable {
     public var includeZenBookmarks: Bool
     public var launcherHotkey: Hotkey
     public var bookmarksHotkey: Hotkey
+    public var combinedSearch: Bool
     public var devicesEnabled: Bool
     public var audioSwitcherEnabled: Bool
     public var statusStripEnabled: Bool
+    public var hideStripWhenBuiltInOnly: Bool
     public var disabledDeviceIDs: Set<String>
     public var sleepCommandsEnabled: Bool
 
@@ -160,9 +162,11 @@ public struct Config: Codable, Equatable {
         includeZenBookmarks: Bool = true,
         launcherHotkey: Hotkey = .defaultLauncher,
         bookmarksHotkey: Hotkey = .defaultBookmarks,
+        combinedSearch: Bool = false,
         devicesEnabled: Bool = false,
         audioSwitcherEnabled: Bool = true,
         statusStripEnabled: Bool = false,
+        hideStripWhenBuiltInOnly: Bool = true,
         disabledDeviceIDs: Set<String> = [],
         sleepCommandsEnabled: Bool = false
     ) {
@@ -176,9 +180,11 @@ public struct Config: Codable, Equatable {
         self.includeZenBookmarks = includeZenBookmarks
         self.launcherHotkey = launcherHotkey
         self.bookmarksHotkey = bookmarksHotkey
+        self.combinedSearch = combinedSearch
         self.devicesEnabled = devicesEnabled
         self.audioSwitcherEnabled = audioSwitcherEnabled
         self.statusStripEnabled = statusStripEnabled
+        self.hideStripWhenBuiltInOnly = hideStripWhenBuiltInOnly
         self.disabledDeviceIDs = disabledDeviceIDs
         self.sleepCommandsEnabled = sleepCommandsEnabled
     }
@@ -194,9 +200,11 @@ public struct Config: Codable, Equatable {
         case includeZenBookmarks
         case launcherHotkey
         case bookmarksHotkey
+        case combinedSearch
         case devicesEnabled
         case audioSwitcherEnabled
         case statusStripEnabled
+        case hideStripWhenBuiltInOnly
         case disabledDeviceIDs
         case sleepCommandsEnabled
     }
@@ -215,9 +223,11 @@ public struct Config: Codable, Equatable {
         self.includeZenBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeZenBookmarks) ?? true
         self.launcherHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .launcherHotkey) ?? .defaultLauncher
         self.bookmarksHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .bookmarksHotkey) ?? .defaultBookmarks
+        self.combinedSearch = try container.decodeIfPresent(Bool.self, forKey: .combinedSearch) ?? false
         self.devicesEnabled = try container.decodeIfPresent(Bool.self, forKey: .devicesEnabled) ?? false
         self.audioSwitcherEnabled = try container.decodeIfPresent(Bool.self, forKey: .audioSwitcherEnabled) ?? true
         self.statusStripEnabled = try container.decodeIfPresent(Bool.self, forKey: .statusStripEnabled) ?? false
+        self.hideStripWhenBuiltInOnly = try container.decodeIfPresent(Bool.self, forKey: .hideStripWhenBuiltInOnly) ?? true
         self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
         self.sleepCommandsEnabled = try container.decodeIfPresent(Bool.self, forKey: .sleepCommandsEnabled) ?? false
     }
