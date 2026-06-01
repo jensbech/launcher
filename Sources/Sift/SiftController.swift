@@ -83,6 +83,16 @@ final class SiftController {
     private func makePanel() -> SiftPanel {
         let panel = SiftPanel(rootView: SiftView(viewModel: viewModel))
         panel.onResignKey = { [weak self] in self?.hide() }
+        panel.onPreKeyDown = { [weak self] event in
+            guard let self else { return false }
+            guard event.modifierFlags.contains(.option),
+                  !event.modifierFlags.contains(.command),
+                  !event.modifierFlags.contains(.control),
+                  event.charactersIgnoringModifiers?.lowercased() == "c" else {
+                return false
+            }
+            return self.viewModel.copySelectedURL()
+        }
         return panel
     }
 

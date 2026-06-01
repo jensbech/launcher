@@ -59,6 +59,9 @@ final class BookmarkViewModel: ObservableObject {
     @Published var selectedIndex: Int = 0
     @Published var focusToken: Int = 0
     @Published var actionsState: ActionsState? = nil
+    @Published var copyFlashID: String? = nil
+
+    private var copyFlashTask: Task<Void, Never>? = nil
 
     var onOpen: ((Bookmark) -> Void)?
     var onOpenURL: ((String) -> Void)?
@@ -233,6 +236,31 @@ final class BookmarkViewModel: ObservableObject {
         onEscape?()
     }
 
+    @discardableResult
+    func copySelectedURL() -> Bool {
+        if let state = actionsState, state.actions.indices.contains(state.selectedIndex) {
+            let action = state.actions[state.selectedIndex]
+            copy(url: action.url, flashID: "action:\(action.id)")
+            return true
+        }
+        guard results.indices.contains(selectedIndex) else { return false }
+        copy(url: results[selectedIndex].primaryBookmark.url, flashID: "result:\(results[selectedIndex].id)")
+        return true
+    }
+
+    private func copy(url: String, flashID: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(url, forType: .string)
+        copyFlashID = flashID
+        copyFlashTask?.cancel()
+        copyFlashTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            guard !Task.isCancelled else { return }
+            if self?.copyFlashID == flashID { self?.copyFlashID = nil }
+        }
+    }
+
     private func refreshIndex() {
         let includeZen = store.load().includeZenBookmarks
         let managed = bookmarkStore.load()
@@ -310,7 +338,8 @@ struct BookmarkView: View {
                                     selected: index == viewModel.selectedIndex,
                                     icon: faviconCache.icon(for: result.primaryBookmark.url),
                                     missed: result.match.missed,
-                                    hasActions: !BookmarkViewModel.actions(for: result).isEmpty
+                                    hasActions: !BookmarkViewModel.actions(for: result).isEmpty,
+                                    copyFlashing: viewModel.copyFlashID == "result:\(result.id)"
                                 )
                                 .id(index)
                                 .contentShape(Rectangle())
@@ -349,6 +378,7 @@ struct BookmarkRow: View {
     let icon: NSImage?
     let missed: Int
     let hasActions: Bool
+    var copyFlashing: Bool = false
 
     private var isApproximate: Bool { missed > 0 }
 
@@ -382,21 +412,25 @@ struct BookmarkRow: View {
                     .truncationMode(.tail)
             }
             Spacer()
-            if isApproximate {
-                Text("~\(missed)")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule().fill(Color.primary.opacity(0.12))
-                    )
-            }
-            if hasActions {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(selected ? .primary : .secondary)
-                    .padding(.leading, 4)
+            if copyFlashing {
+                CopiedBadge()
+            } else {
+                if isApproximate {
+                    Text("~\(missed)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(Color.primary.opacity(0.12))
+                        )
+                }
+                if hasActions {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(selected ? .primary : .secondary)
+                        .padding(.leading, 4)
+                }
             }
         }
         .padding(.horizontal, 18)
@@ -465,11 +499,15 @@ struct BookmarkActionsList: View {
                                 Text(action.title)
                                     .font(.system(size: 15))
                                 Spacer()
-                                Text(action.url.replacingOccurrences(of: "https://", with: ""))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                                if viewModel.copyFlashID == "action:\(action.id)" {
+                                    CopiedBadge()
+                                } else {
+                                    Text(action.url.replacingOccurrences(of: "https://", with: ""))
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 8)

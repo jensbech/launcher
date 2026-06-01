@@ -128,6 +128,9 @@ final class SiftViewModel: ObservableObject {
     @Published var combinedSearch: Bool = false
     @Published var actionsState: ActionsState? = nil
     @Published var screenshotEnabled: Bool = false
+    @Published var copyFlashID: String? = nil
+
+    private var copyFlashTask: Task<Void, Never>? = nil
 
     var onLaunch: ((AppItem) -> Void)?
     var onEscape: (() -> Void)?
@@ -184,6 +187,9 @@ final class SiftViewModel: ObservableObject {
         } else {
             devices = []
             statusDevices = []
+        }
+        if statusStripEnabled {
+            NowPlayingService.shared.refresh()
         }
         if sleepCommandsEnabled {
             SleepService.shared.refresh()
@@ -501,10 +507,39 @@ final class SiftViewModel: ObservableObject {
         if tryExitActions() { return }
         onEscape?()
     }
+
+    @discardableResult
+    func copySelectedURL() -> Bool {
+        if let state = actionsState, state.actions.indices.contains(state.selectedIndex) {
+            let action = state.actions[state.selectedIndex]
+            copy(url: action.url, flashID: "action:\(action.id)")
+            return true
+        }
+        guard results.indices.contains(selectedIndex) else { return false }
+        if case .bookmark(let bookmarkResult) = results[selectedIndex] {
+            copy(url: bookmarkResult.primaryBookmark.url, flashID: "result:\(bookmarkResult.id)")
+            return true
+        }
+        return false
+    }
+
+    private func copy(url: String, flashID: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(url, forType: .string)
+        copyFlashID = flashID
+        copyFlashTask?.cancel()
+        copyFlashTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            guard !Task.isCancelled else { return }
+            if self?.copyFlashID == flashID { self?.copyFlashID = nil }
+        }
+    }
 }
 
 struct SiftView: View {
     @ObservedObject var viewModel: SiftViewModel
+    @ObservedObject private var nowPlaying = NowPlayingService.shared
 
     private static let rowHeight: CGFloat = 48
     private static let maxRows: CGFloat = 7
@@ -540,7 +575,11 @@ struct SiftView: View {
 
             if viewModel.statusStripEnabled && viewModel.query.isEmpty && !viewModel.visibleStatusDevices.isEmpty {
                 Divider().opacity(0.4)
-                DeviceStatusStrip(devices: viewModel.visibleStatusDevices)
+                DeviceStatusStrip(
+                    devices: viewModel.visibleStatusDevices,
+                    nowPlaying: nowPlaying.info,
+                    source: nowPlaying.source
+                )
             }
 
             if let state = viewModel.actionsState {
@@ -555,7 +594,8 @@ struct SiftView: View {
                                 ResultRow(
                                     result: result,
                                     query: viewModel.query,
-                                    selected: index == viewModel.selectedIndex
+                                    selected: index == viewModel.selectedIndex,
+                                    copyFlashing: viewModel.copyFlashID == "result:\(result.id)"
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -587,11 +627,13 @@ struct SiftView: View {
 
 private struct DeviceStatusStrip: View {
     let devices: [DeviceItem]
+    let nowPlaying: NowPlayingService.Info?
+    let source: NowPlayingService.Source?
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                PlayingDot()
+            HStack(spacing: 7) {
+                AudioVisualizer()
                 Text("PLAYING")
                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                     .tracking(1.8)
@@ -614,6 +656,39 @@ private struct DeviceStatusStrip: View {
                         .fill(Color.white.opacity(0.06))
                 )
             }
+            if let info = nowPlaying {
+                HStack(spacing: 6) {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(info.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if let artist = info.artist {
+                        Text("·")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.white.opacity(0.4))
+                        Text(artist)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.white.opacity(0.65))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+            } else if let source {
+                HStack(spacing: 6) {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(source.name)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 18)
@@ -621,20 +696,34 @@ private struct DeviceStatusStrip: View {
     }
 }
 
-private struct PlayingDot: View {
-    @State private var pulse = false
+private struct AudioVisualizer: View {
+    @ObservedObject private var meter = AudioMeterService.shared
+    private let maxHeight: CGFloat = 13
+    private static let bias: [CGFloat] = [0.65, 0.95, 1.0, 0.85, 0.55]
+    private static let accent = Color(red: 0.36, green: 0.92, blue: 0.55)
 
     var body: some View {
-        Circle()
-            .fill(Color(red: 0.36, green: 0.92, blue: 0.55))
-            .frame(width: 6, height: 6)
-            .shadow(color: Color(red: 0.36, green: 0.92, blue: 0.55).opacity(0.7), radius: pulse ? 4 : 2)
-            .opacity(pulse ? 1 : 0.6)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    pulse = true
+        Group {
+            if meter.isAvailable {
+                HStack(alignment: .center, spacing: 2) {
+                    ForEach(0..<meter.bars.count, id: \.self) { i in
+                        let base = CGFloat(meter.bars[i])
+                        let b = Self.bias[i % Self.bias.count]
+                        let h = max(2, min(maxHeight, base * b * maxHeight * 1.8))
+                        Capsule()
+                            .fill(Self.accent)
+                            .frame(width: 2.2, height: h)
+                            .animation(.easeOut(duration: 0.07), value: meter.bars[i])
+                    }
                 }
+            } else {
+                Image(systemName: "waveform.slash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .help(meter.lastError ?? "Audio tap unavailable")
             }
+        }
+        .frame(height: maxHeight)
     }
 }
 
@@ -642,6 +731,7 @@ struct ResultRow: View {
     let result: SiftViewModel.Result
     let query: String
     let selected: Bool
+    var copyFlashing: Bool = false
 
     private var isApproximate: Bool { result.missed > 0 || !result.matchedInPrimary }
 
@@ -732,15 +822,19 @@ struct ResultRow: View {
                 .tracking(1.4)
                 .foregroundStyle(Color(red: 1.0, green: 0.82, blue: 0.18).opacity(0.85))
         case .bookmark(let bookmarkResult):
-            HStack(spacing: 6) {
-                Text(displayHost(for: bookmarkResult.displayURL))
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if bookmarkResult.isEnvGroup {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary.opacity(0.7))
+            if copyFlashing {
+                CopiedBadge()
+            } else {
+                HStack(spacing: 6) {
+                    Text(displayHost(for: bookmarkResult.displayURL))
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if bookmarkResult.isEnvGroup {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary.opacity(0.7))
+                    }
                 }
             }
         case .screenshot:
@@ -827,11 +921,15 @@ private struct InlineActionsList: View {
                                 Text(action.title)
                                     .font(.system(size: 15))
                                 Spacer()
-                                Text(action.url.replacingOccurrences(of: "https://", with: ""))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                                if viewModel.copyFlashID == "action:\(action.id)" {
+                                    CopiedBadge()
+                                } else {
+                                    Text(action.url.replacingOccurrences(of: "https://", with: ""))
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 8)
@@ -853,6 +951,25 @@ private struct InlineActionsList: View {
                 }
             }
         }
+    }
+}
+
+struct CopiedBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+            Text("COPIED")
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .tracking(1.4)
+        }
+        .foregroundStyle(Color(red: 0.36, green: 0.92, blue: 0.55))
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(
+            Capsule().fill(Color(red: 0.36, green: 0.92, blue: 0.55).opacity(0.14))
+        )
+        .transition(.opacity)
     }
 }
 

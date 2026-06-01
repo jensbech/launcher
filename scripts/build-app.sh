@@ -42,10 +42,25 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Sift lists and connects your paired Bluetooth devices from the launcher.</string>
     <key>NSBluetoothPeripheralUsageDescription</key><string>Sift lists and connects your paired Bluetooth devices from the launcher.</string>
+    <key>NSAudioCaptureUsageDescription</key><string>Sift taps system audio output to drive the "now playing" visualizer in the launcher.</string>
+    <key>NSSystemAudioCaptureUsageDescription</key><string>Sift taps system audio output to drive the "now playing" visualizer in the launcher.</string>
 </dict>
 </plist>
 PLIST
 
-codesign --force --deep --sign - "${APP_BUNDLE}"
+ENTITLEMENTS_PLIST="$(mktemp -t sift-entitlements).plist"
+cat > "${ENTITLEMENTS_PLIST}" <<'ENT'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>
+ENT
+
+codesign --force --deep --sign - --entitlements "${ENTITLEMENTS_PLIST}" "${APP_BUNDLE}"
+rm -f "${ENTITLEMENTS_PLIST}"
 
 echo "Built ${APP_BUNDLE}"

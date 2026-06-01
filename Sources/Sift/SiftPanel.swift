@@ -6,6 +6,7 @@ final class SiftPanel: NSPanel {
     static let width: CGFloat = 560
 
     var onResignKey: (() -> Void)?
+    var onPreKeyDown: ((NSEvent) -> Bool)?
     var anchor: NSPoint?
 
     init<Content: View>(rootView: Content) {
@@ -62,5 +63,12 @@ final class SiftPanel: NSPanel {
     override func resignKey() {
         super.resignKey()
         onResignKey?()
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, let onPreKeyDown, onPreKeyDown(event) {
+            return
+        }
+        super.sendEvent(event)
     }
 }
