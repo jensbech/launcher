@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" width="180" alt="Sift icon — a bright cyan node connected to four satellite dots within a dark constellation"/>
+  <img src="Resources/AppIcon.svg" width="180" alt="Sift icon — a bright cyan node connected to four satellite dots within a dark constellation"/>
 </p>
 
 <h1 align="center">Sift</h1>
