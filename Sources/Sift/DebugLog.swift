@@ -4,14 +4,20 @@ enum DebugLog {
     static let path = "/tmp/sift-debug.log"
     private static let lock = NSLock()
     private static var didReset = false
+    private static let enabled: Bool = {
+        guard let value = ProcessInfo.processInfo.environment["SIFT_DEBUG"] else { return false }
+        return !value.isEmpty
+    }()
 
     static func reset() {
+        guard enabled else { return }
         lock.lock(); defer { lock.unlock() }
         didReset = true
         try? "--- sift start \(Date()) ---\n".data(using: .utf8)?.write(to: URL(fileURLWithPath: path))
     }
 
     static func write(_ msg: String) {
+        guard enabled else { return }
         lock.lock(); defer { lock.unlock() }
         if !didReset {
             didReset = true
