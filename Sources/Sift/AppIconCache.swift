@@ -56,12 +56,14 @@ final class AppIconCache {
     private func scheduleDiskWrite(image: NSImage, path: String) {
         guard let dir = diskCacheDir else { return }
         let fileURL = dir.appendingPathComponent(Self.cacheKey(forPath: path)).appendingPathExtension("png")
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:])
-        else { return }
-        diskQueue.async {
-            try? png.write(to: fileURL, options: .atomic)
+        diskQueue.async { [image] in
+            autoreleasepool {
+                guard let tiff = image.tiffRepresentation,
+                      let rep = NSBitmapImageRep(data: tiff),
+                      let png = rep.representation(using: .png, properties: [:])
+                else { return }
+                try? png.write(to: fileURL, options: .atomic)
+            }
         }
     }
 
