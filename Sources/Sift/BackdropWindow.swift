@@ -84,6 +84,11 @@ final class BackdropWindow: NSWindow {
         }
     }
 
+    func suspendPsychedelicEffect() {
+        guard psychedelic else { return }
+        removePsychedelic()
+    }
+
     func cyclePsychedelicEffect(disabledKeys: Set<String>) {
         disabledPsychedelicEffects = disabledKeys
         guard let effect = PsychedelicEffect.random(excluding: disabledKeys) else {

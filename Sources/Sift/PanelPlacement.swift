@@ -55,6 +55,7 @@ enum PanelPlacement {
         }, completionHandler: { [weak window] in
             guard let window, window.alphaValue == 0 else { return }
             window.orderOut(nil)
+            window.suspendPsychedelicEffect()
         })
     }
 }
