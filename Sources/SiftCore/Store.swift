@@ -137,6 +137,7 @@ public struct Config: Codable, Equatable {
     public var backdropIntensity: Double
     public var psychedelicEnabled: Bool
     public var psychedelicIntensity: Double
+    public var disabledPsychedelicEffects: Set<String>
     public var includeZenBookmarks: Bool
     public var launcherHotkey: Hotkey
     public var bookmarksHotkey: Hotkey
@@ -160,6 +161,7 @@ public struct Config: Codable, Equatable {
         backdropIntensity: Double = Config.defaultBackdropIntensity,
         psychedelicEnabled: Bool = false,
         psychedelicIntensity: Double = Config.defaultPsychedelicIntensity,
+        disabledPsychedelicEffects: Set<String> = [],
         includeZenBookmarks: Bool = true,
         launcherHotkey: Hotkey = .defaultLauncher,
         bookmarksHotkey: Hotkey = .defaultBookmarks,
@@ -179,6 +181,7 @@ public struct Config: Codable, Equatable {
         self.backdropIntensity = max(0, min(1, backdropIntensity))
         self.psychedelicEnabled = psychedelicEnabled
         self.psychedelicIntensity = max(0, min(1, psychedelicIntensity))
+        self.disabledPsychedelicEffects = disabledPsychedelicEffects
         self.includeZenBookmarks = includeZenBookmarks
         self.launcherHotkey = launcherHotkey
         self.bookmarksHotkey = bookmarksHotkey
@@ -200,6 +203,7 @@ public struct Config: Codable, Equatable {
         case backdropIntensity
         case psychedelicEnabled
         case psychedelicIntensity
+        case disabledPsychedelicEffects
         case includeZenBookmarks
         case launcherHotkey
         case bookmarksHotkey
@@ -224,6 +228,7 @@ public struct Config: Codable, Equatable {
         self.psychedelicEnabled = try container.decodeIfPresent(Bool.self, forKey: .psychedelicEnabled) ?? false
         let rawPsych = try container.decodeIfPresent(Double.self, forKey: .psychedelicIntensity) ?? Config.defaultPsychedelicIntensity
         self.psychedelicIntensity = max(0, min(1, rawPsych))
+        self.disabledPsychedelicEffects = try container.decodeIfPresent(Set<String>.self, forKey: .disabledPsychedelicEffects) ?? []
         self.includeZenBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeZenBookmarks) ?? true
         self.launcherHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .launcherHotkey) ?? .defaultLauncher
         self.bookmarksHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .bookmarksHotkey) ?? .defaultBookmarks

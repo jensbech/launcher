@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="Resources/AppIcon.svg" width="180" alt="Sift icon — a bright cyan node connected to four satellite dots within a dark constellation"/>
-</p>
-
 <h1 align="center">Sift</h1>
 
 <p align="center">A minimal Spotlight-style macOS launcher. ⌘Space to find apps, bookmarks, devices, system controls, and what's playing — fast, frosted, and fully keyboard-driven.</p>

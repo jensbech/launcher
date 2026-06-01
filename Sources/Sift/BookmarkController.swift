@@ -30,7 +30,7 @@ final class BookmarkController {
         let config = store.load()
         let screen = PanelPlacement.activeScreen()
         if let screen, config.backdropEnabled {
-            PanelPlacement.presentBackdrop(on: screen, intensity: config.backdropIntensity, psychedelic: config.psychedelicEnabled, psychedelicIntensity: config.psychedelicIntensity, existing: &backdrop)
+            PanelPlacement.presentBackdrop(on: screen, intensity: config.backdropIntensity, psychedelic: config.psychedelicEnabled, psychedelicIntensity: config.psychedelicIntensity, disabledPsychedelicEffects: config.disabledPsychedelicEffects, existing: &backdrop)
         }
         positionPanel(panel, position: config.panelPosition)
         panel.makeKeyAndOrderFront(nil)
