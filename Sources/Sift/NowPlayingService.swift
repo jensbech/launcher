@@ -49,27 +49,53 @@ final class NowPlayingService: ObservableObject {
         }
 
         let nc = NotificationCenter.default
-        let names = [
-            "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationPlaybackStateDidChangeNotification",
-            "kMRMediaRemoteNowPlayingApplicationDidChangeNotification"
-        ]
-        for name in names {
-            nc.addObserver(forName: NSNotification.Name(name), object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.refresh() }
-            }
+        nc.addObserver(
+            forName: NSNotification.Name("kMRMediaRemoteNowPlayingInfoDidChangeNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshInfo() }
+        }
+        nc.addObserver(
+            forName: NSNotification.Name("kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshIsPlaying() }
+        }
+        nc.addObserver(
+            forName: NSNotification.Name("kMRMediaRemoteNowPlayingApplicationPlaybackStateDidChangeNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshIsPlaying() }
+        }
+        nc.addObserver(
+            forName: NSNotification.Name("kMRMediaRemoteNowPlayingApplicationDidChangeNotification"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshSource() }
         }
         refresh()
     }
 
     func refresh() {
+        refreshInfo()
+        refreshIsPlaying()
+        refreshSource()
+    }
+
+    func refreshIsPlaying() {
         getIsPlaying?(DispatchQueue.main) { [weak self] playing in
             Task { @MainActor in
                 guard let self else { return }
                 if self.isPlaying != playing { self.isPlaying = playing }
             }
         }
+    }
+
+    func refreshInfo() {
         getInfo?(DispatchQueue.main) { [weak self] raw in
             let dict = raw as? [String: Any] ?? [:]
             let title = (dict["kMRMediaRemoteNowPlayingInfoTitle"] as? String)?
@@ -84,6 +110,9 @@ final class NowPlayingService: ObservableObject {
                 if self.info != next { self.info = next }
             }
         }
+    }
+
+    func refreshSource() {
         getPID?(DispatchQueue.main) { [weak self] pid in
             Task { @MainActor in
                 guard let self else { return }
