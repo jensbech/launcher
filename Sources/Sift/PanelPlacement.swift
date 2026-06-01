@@ -26,10 +26,18 @@ enum PanelPlacement {
     }
 
     @MainActor
-    static func presentBackdrop(on screen: NSScreen, intensity: Double, psychedelic: Bool, psychedelicIntensity: Double, existing: inout BackdropWindow?) {
-        existing?.orderOut(nil)
-        let window = BackdropWindow(screenFrame: screen.frame, intensity: intensity, psychedelic: psychedelic, psychedelicIntensity: psychedelicIntensity)
-        window.setFrame(screen.frame, display: false)
+    static func presentBackdrop(on screen: NSScreen, intensity: Double, psychedelic: Bool, psychedelicIntensity: Double, disabledPsychedelicEffects: Set<String> = [], existing: inout BackdropWindow?) {
+        let window: BackdropWindow
+        if let cached = existing, cached.screenFrame == screen.frame {
+            window = cached
+            window.setIntensity(intensity)
+            window.setPsychedelicEnabled(psychedelic, intensity: psychedelicIntensity, disabledKeys: disabledPsychedelicEffects)
+            window.alphaValue = 0
+        } else {
+            existing?.orderOut(nil)
+            window = BackdropWindow(screenFrame: screen.frame, intensity: intensity, psychedelic: psychedelic, psychedelicIntensity: psychedelicIntensity, disabledPsychedelicEffects: disabledPsychedelicEffects)
+            window.setFrame(screen.frame, display: false)
+        }
         window.orderFront(nil)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
@@ -41,11 +49,11 @@ enum PanelPlacement {
     @MainActor
     static func dismissBackdrop(_ existing: inout BackdropWindow?) {
         guard let window = existing else { return }
-        existing = nil
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.15
             window.animator().alphaValue = 0
-        }, completionHandler: {
+        }, completionHandler: { [weak window] in
+            guard let window, window.alphaValue == 0 else { return }
             window.orderOut(nil)
         })
     }
