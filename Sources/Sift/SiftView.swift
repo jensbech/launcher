@@ -179,11 +179,20 @@ final class SiftViewModel: ObservableObject {
         self.bookmarkStore = bookmarkStore
         self.usage = usageStore.load()
         refreshIndex()
+    }
+
+    private func ensureRunningOutputsSubscription() {
+        guard runningOutputsCancellable == nil else { return }
         runningOutputsCancellable = AudioMeterService.shared.$runningOutputDeviceIDs
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.recomputeVisibleStatusDevices()
             }
+    }
+
+    private func cancelRunningOutputsSubscription() {
+        runningOutputsCancellable?.cancel()
+        runningOutputsCancellable = nil
     }
 
     func refreshIndex() {
@@ -223,9 +232,12 @@ final class SiftViewModel: ObservableObject {
         refreshIndex()
         if devicesEnabled || statusStripEnabled {
             refreshDevices()
+            ensureRunningOutputsSubscription()
         } else {
             devices = []
             statusDevices = []
+            visibleStatusDevices = []
+            cancelRunningOutputsSubscription()
         }
         if statusStripEnabled {
             NowPlayingService.shared.refresh()
@@ -278,16 +290,15 @@ final class SiftViewModel: ObservableObject {
         let playing = statusDevices.filter { device in
             device.kind == .audioOutput && runningIDs.contains(device.id)
         }
-        guard !playing.isEmpty else {
-            visibleStatusDevices = []
-            return
-        }
-        if hideStripWhenBuiltInOnly {
-            let nonBuiltIn = playing.contains { $0.category != .builtIn }
-            visibleStatusDevices = nonBuiltIn ? playing : []
+        let next: [DeviceItem]
+        if playing.isEmpty {
+            next = []
+        } else if hideStripWhenBuiltInOnly {
+            next = playing.contains { $0.category != .builtIn } ? playing : []
         } else {
-            visibleStatusDevices = playing
+            next = playing
         }
+        if next != visibleStatusDevices { visibleStatusDevices = next }
     }
 
     func updateQuery(_ value: String) {
