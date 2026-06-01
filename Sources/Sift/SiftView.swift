@@ -108,6 +108,16 @@ final class SiftViewModel: ObservableObject {
             case .screenshot: return "Screenshot region"
             }
         }
+
+        var typeRank: Int {
+            switch self {
+            case .sleep: return 4
+            case .screenshot: return 4
+            case .app: return 3
+            case .device: return 2
+            case .bookmark: return 1
+            }
+        }
     }
 
     private struct ScreenshotMatchTarget {
@@ -303,6 +313,7 @@ final class SiftViewModel: ObservableObject {
             if a.matchedInPrimary != b.matchedInPrimary {
                 return a.matchedInPrimary && !b.matchedInPrimary
             }
+            if a.typeRank != b.typeRank { return a.typeRank > b.typeRank }
             if a.missed != b.missed { return a.missed < b.missed }
             if a.score != b.score { return a.score > b.score }
             return a.sortName.localizedCaseInsensitiveCompare(b.sortName) == .orderedAscending
