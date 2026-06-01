@@ -319,7 +319,15 @@ final class SiftViewModel: ObservableObject {
             return a.sortName.localizedCaseInsensitiveCompare(b.sortName) == .orderedAscending
         }
 
-        results = Array(merged.prefix(100))
+        let queryLen = value.count
+        let filtered: [Result]
+        if queryLen <= 2 {
+            filtered = merged.filter { $0.matchedInPrimary && $0.missed == 0 }
+        } else {
+            filtered = merged.filter { $0.matchedInPrimary }
+        }
+        let limit = queryLen <= 2 ? 12 : 30
+        results = Array(filtered.prefix(limit))
         DebugLog.write("SiftVM.updateQuery matched=\(merged.count) results=\(results.count)")
         selectedIndex = 0
     }
