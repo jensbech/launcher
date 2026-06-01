@@ -124,8 +124,15 @@ final class SiftViewModel: ObservableObject {
         let name = "Screenshot region"
     }
 
+    struct RenderedResult: Identifiable {
+        let result: Result
+        let highlightedName: AttributedString
+
+        var id: String { result.id }
+    }
+
     @Published var query: String = ""
-    @Published var results: [Result] = []
+    @Published var results: [RenderedResult] = []
     @Published var selectedIndex: Int = 0
     @Published var focusToken: Int = 0
     @Published var statusDevices: [DeviceItem] = []
@@ -360,9 +367,43 @@ final class SiftViewModel: ObservableObject {
             filtered = merged.filter { $0.matchedInPrimary }
         }
         let limit = queryLen <= 2 ? 12 : 30
-        results = Array(filtered.prefix(limit))
+        let sliced = Array(filtered.prefix(limit))
+        results = sliced.map { result in
+            RenderedResult(
+                result: result,
+                highlightedName: Self.highlight(rawName: Self.rawName(for: result), query: value)
+            )
+        }
         DebugLog.write("SiftVM.updateQuery matched=\(merged.count) results=\(results.count)")
         selectedIndex = 0
+    }
+
+    static func rawName(for result: Result) -> String {
+        switch result {
+        case .app(let item, _): return item.name
+        case .device(let device, _): return device.name
+        case .sleep(let cmd, _): return cmd.name
+        case .bookmark(let bookmarkResult): return bookmarkResult.displayName
+        case .screenshot: return "Screenshot region"
+        }
+    }
+
+    static func highlight(rawName: String, query: String) -> AttributedString {
+        let chars = Array(rawName)
+        let matched = Set(FuzzyMatcher.matchedIndices(query: query, candidate: rawName) ?? [])
+        var result = AttributedString()
+        for (index, char) in chars.enumerated() {
+            var piece = AttributedString(String(char))
+            if matched.contains(index) {
+                piece.font = .system(size: 16, weight: .semibold)
+                piece.foregroundColor = .primary
+            } else {
+                piece.font = .system(size: 16, weight: .regular)
+                piece.foregroundColor = .primary.opacity(0.85)
+            }
+            result += piece
+        }
+        return result
     }
 
     func moveDown() {
@@ -390,7 +431,7 @@ final class SiftViewModel: ObservableObject {
     func enterActions() {
         guard actionsState == nil,
               results.indices.contains(selectedIndex) else { return }
-        guard case .bookmark(let bookmarkResult) = results[selectedIndex] else { return }
+        guard case .bookmark(let bookmarkResult) = results[selectedIndex].result else { return }
         let actions = Self.actions(for: bookmarkResult)
         guard !actions.isEmpty else { return }
         actionsState = ActionsState(
@@ -488,7 +529,7 @@ final class SiftViewModel: ObservableObject {
             return
         }
         guard results.indices.contains(selectedIndex) else { return }
-        switch results[selectedIndex] {
+        switch results[selectedIndex].result {
         case .app(let item, _):
             usage.record(item.id)
             usageStore.save(usage)
@@ -568,7 +609,7 @@ final class SiftViewModel: ObservableObject {
             return true
         }
         guard results.indices.contains(selectedIndex) else { return false }
-        if case .bookmark(let bookmarkResult) = results[selectedIndex] {
+        if case .bookmark(let bookmarkResult) = results[selectedIndex].result {
             copy(url: bookmarkResult.primaryBookmark.url, flashID: "result:\(bookmarkResult.id)")
             return true
         }
@@ -633,12 +674,12 @@ struct SiftView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(viewModel.results.enumerated()), id: \.element.id) { index, result in
+                            ForEach(Array(viewModel.results.enumerated()), id: \.element.id) { index, rendered in
                                 ResultRow(
-                                    result: result,
-                                    query: viewModel.query,
+                                    result: rendered.result,
+                                    highlightedName: rendered.highlightedName,
                                     selected: index == viewModel.selectedIndex,
-                                    copyFlashing: viewModel.copyFlashID == "result:\(result.id)"
+                                    copyFlashing: viewModel.copyFlashID == "result:\(rendered.id)"
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -815,7 +856,7 @@ private struct AudioVisualizer: View {
 
 struct ResultRow: View {
     let result: SiftViewModel.Result
-    let query: String
+    let highlightedName: AttributedString
     let selected: Bool
     var copyFlashing: Bool = false
 
@@ -937,33 +978,6 @@ struct ResultRow: View {
         return host
     }
 
-    private var rawName: String {
-        switch result {
-        case .app(let item, _): return item.name
-        case .device(let device, _): return device.name
-        case .sleep(let cmd, _): return cmd.name
-        case .bookmark(let bookmarkResult): return bookmarkResult.displayName
-        case .screenshot: return "Screenshot region"
-        }
-    }
-
-    private var highlightedName: AttributedString {
-        let chars = Array(rawName)
-        let matched = Set(FuzzyMatcher.matchedIndices(query: query, candidate: rawName) ?? [])
-        var result = AttributedString()
-        for (index, char) in chars.enumerated() {
-            var piece = AttributedString(String(char))
-            if matched.contains(index) {
-                piece.font = .system(size: 16, weight: .semibold)
-                piece.foregroundColor = .primary
-            } else {
-                piece.font = .system(size: 16, weight: .regular)
-                piece.foregroundColor = .primary.opacity(0.85)
-            }
-            result += piece
-        }
-        return result
-    }
 }
 
 private struct InlineActionsList: View {
