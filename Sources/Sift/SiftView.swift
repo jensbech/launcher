@@ -156,6 +156,7 @@ final class SiftViewModel: ObservableObject {
     private var usage: UsageStats
     private var allApps: [AppItem] = []
     private var disabledIDs: Set<String> = []
+    private var searchableApps: [AppItem] = []
     private var devices: [DeviceItem] = []
     private var disabledDeviceIDs: Set<String> = []
     private var audioSwitcherEnabled: Bool = true
@@ -174,8 +175,15 @@ final class SiftViewModel: ObservableObject {
     func refreshIndex() {
         Task.detached(priority: .utility) {
             let scanned = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
-            await MainActor.run { self.allApps = scanned }
+            await MainActor.run {
+                self.allApps = scanned
+                self.rebuildSearchableApps()
+            }
         }
+    }
+
+    private func rebuildSearchableApps() {
+        searchableApps = allApps.filter { !disabledIDs.contains($0.id) }
     }
 
     func reload() {
@@ -186,6 +194,7 @@ final class SiftViewModel: ObservableObject {
         selectedIndex = 0
         let config = store.load()
         disabledIDs = config.disabledBundleIDs
+        rebuildSearchableApps()
         disabledDeviceIDs = config.disabledDeviceIDs
         devicesEnabled = config.devicesEnabled
         statusStripEnabled = config.statusStripEnabled
@@ -289,7 +298,7 @@ final class SiftViewModel: ObservableObject {
     }
 
     private func performSearch(for value: String) {
-        let appPool = allApps.filter { !disabledIDs.contains($0.id) }
+        let appPool = searchableApps
         let appMatches = FuzzyMatcher.search(value, in: appPool) { [usage] item in
             usage.boost(for: item.id)
         }
