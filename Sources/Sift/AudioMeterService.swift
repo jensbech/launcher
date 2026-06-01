@@ -1,6 +1,7 @@
 import Foundation
 import CoreAudio
 import AppKit
+import Accelerate
 import os
 
 final class AudioMeterService: ObservableObject, @unchecked Sendable {
@@ -204,23 +205,21 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private func process(_ inputData: UnsafePointer<AudioBufferList>) {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
         var sumSquares: Float = 0
-        var count: Int = 0
+        var count: vDSP_Length = 0
         var peak: Float = 0
-        var firstSampleSeen: Float = 0
         for buffer in buffers {
             guard let data = buffer.mData else { continue }
-            let floatCount = Int(buffer.mDataByteSize) / MemoryLayout<Float32>.size
+            let floatCount = vDSP_Length(buffer.mDataByteSize) / vDSP_Length(MemoryLayout<Float32>.size)
+            guard floatCount > 0 else { continue }
             let ptr = data.assumingMemoryBound(to: Float32.self)
-            if floatCount > 0 && firstSampleSeen == 0 { firstSampleSeen = ptr[0] }
-            for i in 0..<floatCount {
-                let s = ptr[i]
-                sumSquares += s * s
-                let a = s < 0 ? -s : s
-                if a > peak { peak = a }
-            }
+            var bufSumSq: Float = 0
+            vDSP_measqv(ptr, 1, &bufSumSq, floatCount)
+            sumSquares += bufSumSq * Float(floatCount)
+            var bufPeak: Float = 0
+            vDSP_maxmgv(ptr, 1, &bufPeak, floatCount)
+            if bufPeak > peak { peak = bufPeak }
             count += floatCount
         }
-        _ = firstSampleSeen
         let rms = count > 0 ? sqrtf(sumSquares / Float(count)) : 0
         os_unfair_lock_lock(&lock)
         atomicRMS = max(atomicRMS, rms)
