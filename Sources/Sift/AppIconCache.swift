@@ -35,6 +35,22 @@ final class AppIconCache {
         cache.removeValue(forKey: path)
     }
 
+    private var warmTask: Task<Void, Never>?
+
+    func warm(paths: [String]) {
+        warmTask?.cancel()
+        warmTask = Task { @MainActor [weak self] in
+            for path in paths {
+                if Task.isCancelled { return }
+                guard let self else { return }
+                if self.cache[path] == nil {
+                    _ = self.icon(forPath: path)
+                }
+                try? await Task.sleep(nanoseconds: 4_000_000)
+            }
+        }
+    }
+
     private func loadFromDiskIfFresh(bundlePath: String, fileURL: URL) -> NSImage? {
         let fm = FileManager.default
         guard let cacheAttrs = try? fm.attributesOfItem(atPath: fileURL.path),

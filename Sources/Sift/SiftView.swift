@@ -192,6 +192,7 @@ final class SiftViewModel: ObservableObject {
             await MainActor.run {
                 self.allApps = scanned
                 self.rebuildSearchableApps()
+                AppIconCache.shared.warm(paths: scanned.map { $0.path })
             }
         }
     }
