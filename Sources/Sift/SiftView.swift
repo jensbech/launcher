@@ -270,7 +270,7 @@ final class SiftViewModel: ObservableObject {
         let sleepMatches: [(SleepCommand, FuzzyMatch)]
         if sleepCommandsEnabled, !value.isEmpty {
             let commands = SleepCommand.available(isDisabled: sleepDisabled)
-            sleepMatches = FuzzyMatcher.search(value, in: commands, name: { $0.name })
+            sleepMatches = FuzzyMatcher.search(value, in: commands, name: { $0.name }, boost: { _ in 60 })
         } else {
             sleepMatches = []
         }
@@ -286,7 +286,7 @@ final class SiftViewModel: ObservableObject {
         let screenshotMatches: [FuzzyMatch]
         if screenshotEnabled, !value.isEmpty {
             let target = ScreenshotMatchTarget()
-            let raw = FuzzyMatcher.search(value, in: [target], name: { $0.name })
+            let raw = FuzzyMatcher.search(value, in: [target], name: { $0.name }, boost: { _ in 60 })
             screenshotMatches = raw.map { $0.1 }
         } else {
             screenshotMatches = []
@@ -573,15 +573,6 @@ struct SiftView: View {
             .padding(.horizontal, 22)
             .padding(.vertical, 16)
 
-            if viewModel.statusStripEnabled && viewModel.query.isEmpty && !viewModel.visibleStatusDevices.isEmpty {
-                Divider().opacity(0.4)
-                DeviceStatusStrip(
-                    devices: viewModel.visibleStatusDevices,
-                    nowPlaying: nowPlaying.info,
-                    source: nowPlaying.source
-                )
-            }
-
             if let state = viewModel.actionsState {
                 Divider()
                 InlineActionsList(state: state, viewModel: viewModel)
@@ -613,6 +604,15 @@ struct SiftView: View {
                     }
                 }
             }
+
+            if viewModel.statusStripEnabled && !viewModel.visibleStatusDevices.isEmpty {
+                Divider().opacity(0.4)
+                DeviceStatusStrip(
+                    devices: viewModel.visibleStatusDevices,
+                    nowPlaying: nowPlaying.info,
+                    source: nowPlaying.source
+                )
+            }
         }
         .frame(width: 560)
         .background(
@@ -629,6 +629,7 @@ private struct DeviceStatusStrip: View {
     let devices: [DeviceItem]
     let nowPlaying: NowPlayingService.Info?
     let source: NowPlayingService.Source?
+    @ObservedObject private var meter = AudioMeterService.shared
 
     var body: some View {
         HStack(spacing: 10) {
@@ -656,6 +657,9 @@ private struct DeviceStatusStrip: View {
                         .fill(Color.white.opacity(0.06))
                 )
             }
+            ForEach(meter.activeSources) { src in
+                SourcePill(source: src)
+            }
             if let info = nowPlaying {
                 HStack(spacing: 6) {
                     Image(systemName: "music.note")
@@ -677,7 +681,7 @@ private struct DeviceStatusStrip: View {
                             .truncationMode(.tail)
                     }
                 }
-            } else if let source {
+            } else if let source, !meter.activeSources.contains(where: { $0.id == source.bundleID }) {
                 HStack(spacing: 6) {
                     Image(systemName: "music.note")
                         .font(.system(size: 10, weight: .medium))
@@ -693,6 +697,36 @@ private struct DeviceStatusStrip: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
+    }
+}
+
+private struct SourcePill: View {
+    let source: AudioMeterService.SourceApp
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let icon = source.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.medium)
+                    .frame(width: 13, height: 13)
+            } else {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            Text(source.name)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
     }
 }
 

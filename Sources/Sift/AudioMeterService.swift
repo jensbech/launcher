@@ -12,6 +12,17 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     @Published private(set) var level: Float = 0
     @Published private(set) var isAvailable: Bool = false
     @Published private(set) var lastError: String?
+    @Published private(set) var activeSources: [SourceApp] = []
+
+    struct SourceApp: Equatable, Identifiable {
+        let id: String
+        let name: String
+        let icon: NSImage?
+
+        static func == (lhs: SourceApp, rhs: SourceApp) -> Bool {
+            lhs.id == rhs.id && lhs.name == rhs.name
+        }
+    }
 
     private var tapID: AudioObjectID = 0
     private var aggregateID: AudioDeviceID = 0
@@ -24,6 +35,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private var ioProcCallCount: Int = 0
 
     private var refreshTimer: Timer?
+    private var sourceTimer: Timer?
     private var defaultDeviceListenerInstalled = false
     private var processListListenerInstalled = false
     private var rebuildWorkItem: DispatchWorkItem?
@@ -33,6 +45,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             setupTap()
             observeDefaultDeviceChanges()
             observeProcessListChanges()
+            scheduleSourcePolling()
         }
         scheduleRefresh()
     }
@@ -296,6 +309,60 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         }
         guard err == noErr, let unmanaged = cf else { return nil }
         return unmanaged.takeRetainedValue() as String
+    }
+
+    @available(macOS 14.2, *)
+    private func scheduleSourcePolling() {
+        sourceTimer?.invalidate()
+        let t = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.refreshSources()
+        }
+        RunLoop.main.add(t, forMode: .common)
+        sourceTimer = t
+        refreshSources()
+    }
+
+    @available(macOS 14.2, *)
+    private func refreshSources() {
+        let processes = audioProcessObjectIDs()
+        var collected: [SourceApp] = []
+        for obj in processes {
+            guard isProcessRunningOutput(obj) else { continue }
+            guard let pid = pidForAudioProcess(obj),
+                  let app = NSRunningApplication(processIdentifier: pid) else { continue }
+            let id = app.bundleIdentifier ?? "pid:\(pid)"
+            let name = app.localizedName ?? id
+            if !collected.contains(where: { $0.id == id }) {
+                collected.append(SourceApp(id: id, name: name, icon: app.icon))
+            }
+        }
+        if collected != activeSources {
+            activeSources = collected
+        }
+    }
+
+    private func isProcessRunningOutput(_ id: AudioObjectID) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: AudioObjectPropertySelector(kAudioProcessPropertyIsRunningOutput),
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var running: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let err = AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &running)
+        return err == noErr && running != 0
+    }
+
+    private func pidForAudioProcess(_ id: AudioObjectID) -> pid_t? {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: AudioObjectPropertySelector(kAudioProcessPropertyPID),
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var pid: pid_t = 0
+        var size = UInt32(MemoryLayout<pid_t>.size)
+        let err = AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &pid)
+        return (err == noErr && pid > 0) ? pid : nil
     }
 
     private func audioProcessObjectIDs() -> [AudioObjectID] {
