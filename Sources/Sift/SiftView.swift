@@ -141,6 +141,9 @@ final class SiftViewModel: ObservableObject {
     @Published var copyFlashID: String? = nil
 
     private var copyFlashTask: Task<Void, Never>? = nil
+    private var pendingSearchTask: Task<Void, Never>? = nil
+
+    private static let searchDebounceNanos: UInt64 = 40_000_000
 
     var onLaunch: ((AppItem) -> Void)?
     var onEscape: (() -> Void)?
@@ -176,6 +179,8 @@ final class SiftViewModel: ObservableObject {
     }
 
     func reload() {
+        pendingSearchTask?.cancel()
+        pendingSearchTask = nil
         query = ""
         results = []
         selectedIndex = 0
@@ -265,20 +270,39 @@ final class SiftViewModel: ObservableObject {
         if actionsState != nil { actionsState = nil }
         query = value
 
+        pendingSearchTask?.cancel()
+        pendingSearchTask = nil
+
+        if value.isEmpty {
+            results = []
+            selectedIndex = 0
+            return
+        }
+
+        pendingSearchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: SiftViewModel.searchDebounceNanos)
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            guard self.query == value else { return }
+            self.performSearch(for: value)
+        }
+    }
+
+    private func performSearch(for value: String) {
         let appPool = allApps.filter { !disabledIDs.contains($0.id) }
         let appMatches = FuzzyMatcher.search(value, in: appPool) { [usage] item in
             usage.boost(for: item.id)
         }
 
         let deviceMatches: [(DeviceItem, FuzzyMatch)]
-        if devicesEnabled, !value.isEmpty {
+        if devicesEnabled {
             deviceMatches = FuzzyMatcher.search(value, in: devices, name: { $0.name })
         } else {
             deviceMatches = []
         }
 
         let sleepMatches: [(SleepCommand, FuzzyMatch)]
-        if sleepCommandsEnabled, !value.isEmpty {
+        if sleepCommandsEnabled {
             let commands = SleepCommand.available(isDisabled: sleepDisabled)
             sleepMatches = FuzzyMatcher.search(value, in: commands, name: { $0.name }, boost: { _ in 60 })
         } else {
@@ -286,7 +310,7 @@ final class SiftViewModel: ObservableObject {
         }
 
         let bookmarkResults: [BookmarkSearchResult]
-        if combinedSearch, !value.isEmpty {
+        if combinedSearch {
             let raw = FuzzyMatcher.search(value, in: bookmarks, name: { $0.name }, secondary: { $0.url })
             bookmarkResults = Self.groupedBookmarkResults(raw)
         } else {
@@ -294,7 +318,7 @@ final class SiftViewModel: ObservableObject {
         }
 
         let screenshotMatches: [FuzzyMatch]
-        if screenshotEnabled, !value.isEmpty {
+        if screenshotEnabled {
             let target = ScreenshotMatchTarget()
             let raw = FuzzyMatcher.search(value, in: [target], name: { $0.name }, boost: { _ in 60 })
             screenshotMatches = raw.map { $0.1 }
