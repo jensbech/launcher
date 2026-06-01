@@ -41,6 +41,8 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private var processListListenerInstalled = false
     private var rebuildWorkItem: DispatchWorkItem?
 
+    private var sourceCache: [pid_t: SourceApp] = [:]
+
     private var ringBuffer: [Float] = Array(repeating: 0, count: barCount)
     private var ringHead: Int = 0
     private var displayBuffer: [Float] = Array(repeating: 0, count: barCount)
@@ -310,6 +312,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         ) { [weak self] _, _ in
             self?.scheduleRebuild()
             self?.refreshRunningOutputs()
+            self?.refreshSources()
         }
     }
 
@@ -363,7 +366,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     @available(macOS 14.2, *)
     private func scheduleSourcePolling() {
         sourceTimer?.invalidate()
-        let t = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.refreshSources()
         }
         RunLoop.main.add(t, forMode: .common)
@@ -375,16 +378,26 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private func refreshSources() {
         let processes = audioProcessObjectIDs()
         var collected: [SourceApp] = []
+        var seenPIDs: Set<pid_t> = []
         for obj in processes {
             guard isProcessRunningOutput(obj) else { continue }
-            guard let pid = pidForAudioProcess(obj),
-                  let app = NSRunningApplication(processIdentifier: pid) else { continue }
-            let id = app.bundleIdentifier ?? "pid:\(pid)"
-            let name = app.localizedName ?? id
-            if !collected.contains(where: { $0.id == id }) {
-                collected.append(SourceApp(id: id, name: name, icon: app.icon))
+            guard let pid = pidForAudioProcess(obj) else { continue }
+            seenPIDs.insert(pid)
+            let source: SourceApp
+            if let cached = sourceCache[pid] {
+                source = cached
+            } else {
+                guard let app = NSRunningApplication(processIdentifier: pid) else { continue }
+                let id = app.bundleIdentifier ?? "pid:\(pid)"
+                let name = app.localizedName ?? id
+                source = SourceApp(id: id, name: name, icon: app.icon)
+                sourceCache[pid] = source
+            }
+            if !collected.contains(where: { $0.id == source.id }) {
+                collected.append(source)
             }
         }
+        sourceCache = sourceCache.filter { seenPIDs.contains($0.key) }
         if collected != activeSources {
             activeSources = collected
         }
