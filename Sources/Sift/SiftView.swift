@@ -57,6 +57,7 @@ final class SiftViewModel: ObservableObject {
         case device(DeviceItem, FuzzyMatch)
         case sleep(SleepCommand, FuzzyMatch)
         case bookmark(BookmarkSearchResult)
+        case screenshot(FuzzyMatch)
 
         var id: String {
             switch self {
@@ -64,6 +65,7 @@ final class SiftViewModel: ObservableObject {
             case .device(let item, _): return item.id
             case .sleep(let cmd, _): return cmd.id
             case .bookmark(let r): return "bookmark:" + r.id
+            case .screenshot: return "cmd:screenshot"
             }
         }
 
@@ -73,6 +75,7 @@ final class SiftViewModel: ObservableObject {
             case .device(_, let m): return m.missed
             case .sleep(_, let m): return m.missed
             case .bookmark(let r): return r.match.missed
+            case .screenshot(let m): return m.missed
             }
         }
 
@@ -82,8 +85,33 @@ final class SiftViewModel: ObservableObject {
             case .device(_, let m): return !m.matched.isEmpty
             case .sleep(_, let m): return !m.matched.isEmpty
             case .bookmark(let r): return !r.match.matched.isEmpty
+            case .screenshot(let m): return !m.matched.isEmpty
             }
         }
+
+        var score: Int {
+            switch self {
+            case .app(_, let m): return m.score
+            case .device(_, let m): return m.score
+            case .sleep(_, let m): return m.score
+            case .bookmark(let r): return r.match.score
+            case .screenshot(let m): return m.score
+            }
+        }
+
+        var sortName: String {
+            switch self {
+            case .app(let a, _): return a.name
+            case .device(let d, _): return d.name
+            case .sleep(let s, _): return s.name
+            case .bookmark(let r): return r.displayName
+            case .screenshot: return "Screenshot region"
+            }
+        }
+    }
+
+    private struct ScreenshotMatchTarget {
+        let name = "Screenshot region"
     }
 
     @Published var query: String = ""
@@ -91,6 +119,7 @@ final class SiftViewModel: ObservableObject {
     @Published var selectedIndex: Int = 0
     @Published var focusToken: Int = 0
     @Published var statusDevices: [DeviceItem] = []
+    @Published var visibleStatusDevices: [DeviceItem] = []
     @Published var devicesEnabled: Bool = false
     @Published var statusStripEnabled: Bool = false
     @Published var hideStripWhenBuiltInOnly: Bool = true
@@ -98,10 +127,12 @@ final class SiftViewModel: ObservableObject {
     @Published var sleepDisabled: Bool = false
     @Published var combinedSearch: Bool = false
     @Published var actionsState: ActionsState? = nil
+    @Published var screenshotEnabled: Bool = false
 
     var onLaunch: ((AppItem) -> Void)?
     var onEscape: (() -> Void)?
     var onDeviceActivated: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
 
     private let store: Store
     private let usageStore: UsageStore
@@ -113,6 +144,8 @@ final class SiftViewModel: ObservableObject {
     private var disabledDeviceIDs: Set<String> = []
     private var audioSwitcherEnabled: Bool = true
     private var bookmarks: [Bookmark] = []
+    private var cachedZenBookmarks: [Bookmark] = []
+    private var lastZenMTime: Date?
 
     init(store: Store, usageStore: UsageStore = UsageStore(), bookmarkStore: BookmarkStore = BookmarkStore()) {
         self.store = store
@@ -141,6 +174,7 @@ final class SiftViewModel: ObservableObject {
         hideStripWhenBuiltInOnly = config.hideStripWhenBuiltInOnly
         audioSwitcherEnabled = config.audioSwitcherEnabled
         sleepCommandsEnabled = config.sleepCommandsEnabled
+        screenshotEnabled = config.screenshotEnabled
         combinedSearch = config.combinedSearch
         usage = usageStore.load()
         focusToken &+= 1
@@ -166,7 +200,21 @@ final class SiftViewModel: ObservableObject {
 
     private func refreshBookmarks(config: Config) {
         let managed = bookmarkStore.load()
-        let zen: [Bookmark] = config.includeZenBookmarks ? ZenBookmarkImporter.load() : []
+        let zen: [Bookmark]
+        if config.includeZenBookmarks {
+            let currentMTime = ZenBookmarkImporter.modificationTime()
+            if let mtime = currentMTime, mtime == lastZenMTime, !cachedZenBookmarks.isEmpty {
+                zen = cachedZenBookmarks
+            } else {
+                zen = ZenBookmarkImporter.load()
+                cachedZenBookmarks = zen
+                lastZenMTime = currentMTime
+            }
+        } else {
+            zen = []
+            cachedZenBookmarks = []
+            lastZenMTime = nil
+        }
         bookmarks = BookmarkIndex.merged(managed: managed, imported: zen)
         FaviconCache.shared.prefetch(bookmarks: bookmarks)
     }
@@ -177,19 +225,23 @@ final class SiftViewModel: ObservableObject {
         let combinedForSearch = bt + (audioSwitcherEnabled ? audio : [])
         devices = combinedForSearch.filter { !disabledDeviceIDs.contains($0.id) }
         statusDevices = (bt + audio).filter { $0.isActive && !disabledDeviceIDs.contains($0.id) }
+        recomputeVisibleStatusDevices()
     }
 
-    var visibleStatusDevices: [DeviceItem] {
+    private func recomputeVisibleStatusDevices() {
         let playing = statusDevices.filter { device in
             device.kind == .audioOutput && AudioService.isRunning(deviceID: device.id)
         }
-        guard !playing.isEmpty else { return [] }
-
+        guard !playing.isEmpty else {
+            visibleStatusDevices = []
+            return
+        }
         if hideStripWhenBuiltInOnly {
             let nonBuiltIn = playing.contains { $0.category != .builtIn }
-            return nonBuiltIn ? playing : []
+            visibleStatusDevices = nonBuiltIn ? playing : []
+        } else {
+            visibleStatusDevices = playing
         }
-        return playing
     }
 
     func updateQuery(_ value: String) {
@@ -225,11 +277,30 @@ final class SiftViewModel: ObservableObject {
             bookmarkResults = []
         }
 
+        let screenshotMatches: [FuzzyMatch]
+        if screenshotEnabled, !value.isEmpty {
+            let target = ScreenshotMatchTarget()
+            let raw = FuzzyMatcher.search(value, in: [target], name: { $0.name })
+            screenshotMatches = raw.map { $0.1 }
+        } else {
+            screenshotMatches = []
+        }
+
         var merged: [Result] = []
         merged.append(contentsOf: appMatches.map { Result.app($0.0, $0.1) })
         merged.append(contentsOf: bookmarkResults.map { Result.bookmark($0) })
         merged.append(contentsOf: deviceMatches.map { Result.device($0.0, $0.1) })
         merged.append(contentsOf: sleepMatches.map { Result.sleep($0.0, $0.1) })
+        merged.append(contentsOf: screenshotMatches.map { Result.screenshot($0) })
+
+        merged.sort { a, b in
+            if a.matchedInPrimary != b.matchedInPrimary {
+                return a.matchedInPrimary && !b.matchedInPrimary
+            }
+            if a.missed != b.missed { return a.missed < b.missed }
+            if a.score != b.score { return a.score > b.score }
+            return a.sortName.localizedCaseInsensitiveCompare(b.sortName) == .orderedAscending
+        }
 
         results = Array(merged.prefix(100))
         DebugLog.write("SiftVM.updateQuery matched=\(merged.count) results=\(results.count)")
@@ -374,7 +445,29 @@ final class SiftViewModel: ObservableObject {
         case .bookmark(let bookmarkResult):
             openURL(bookmarkResult.primaryBookmark.url)
             onDeviceActivated?()
+        case .screenshot:
+            onDeviceActivated?()
+            DispatchQueue.main.async {
+                ScreenshotController.shared.captureRegion()
+            }
         }
+    }
+
+    func startScreenshotCapture() {
+        onDeviceActivated?()
+        DispatchQueue.main.async {
+            ScreenshotController.shared.captureRegion()
+        }
+    }
+
+    func openSettings() {
+        onOpenSettings?()
+    }
+
+    var onLogoTap: (() -> Void)?
+
+    func tapLogo() {
+        onLogoTap?()
     }
 
     private func openURL(_ urlString: String) {
@@ -424,9 +517,7 @@ struct SiftView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 20, weight: .light))
-                    .foregroundStyle(.secondary)
+                SiftLogoButton(viewModel: viewModel)
                 SearchField(
                     text: Binding(get: { viewModel.query }, set: { viewModel.updateQuery($0) }),
                     focusToken: viewModel.focusToken,
@@ -437,6 +528,9 @@ struct SiftView: View {
                     onMoveRight: { viewModel.enterActions() },
                     onMoveLeft: { viewModel.tryExitActions() }
                 )
+                if viewModel.screenshotEnabled {
+                    ScreenshotButton(viewModel: viewModel)
+                }
                 if viewModel.sleepCommandsEnabled {
                     SleepEyeButton(viewModel: viewModel)
                 }
@@ -568,7 +662,7 @@ struct ResultRow: View {
     private var leading: some View {
         switch result {
         case .app(let item, _):
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+            Image(nsImage: AppIconCache.shared.icon(forPath: item.path))
                 .resizable()
                 .frame(width: 32, height: 32)
         case .device(let device, _):
@@ -591,6 +685,15 @@ struct ResultRow: View {
             }
         case .bookmark(let bookmarkResult):
             BookmarkLeadingIcon(url: bookmarkResult.primaryBookmark.url)
+        case .screenshot:
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.22))
+                    .frame(width: 32, height: 32)
+                Image(systemName: "selection.pin.in.out")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+            }
         }
     }
 
@@ -640,6 +743,11 @@ struct ResultRow: View {
                         .foregroundStyle(.secondary.opacity(0.7))
                 }
             }
+        case .screenshot:
+            Text("CAPTURE")
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .tracking(1.4)
+                .foregroundStyle(Color.accentColor.opacity(0.85))
         }
     }
 
@@ -655,6 +763,7 @@ struct ResultRow: View {
         case .device(let device, _): return device.name
         case .sleep(let cmd, _): return cmd.name
         case .bookmark(let bookmarkResult): return bookmarkResult.displayName
+        case .screenshot: return "Screenshot region"
         }
     }
 
@@ -770,6 +879,58 @@ private struct BookmarkLeadingIcon: View {
     }
 }
 
+private struct SiftLogoButton: View {
+    @ObservedObject var viewModel: SiftViewModel
+    @State private var hover = false
+    @State private var press = false
+
+    var body: some View {
+        Button {
+            press = true
+            viewModel.tapLogo()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { press = false }
+        } label: {
+            SiftMark(size: 20, color: .white.opacity(hover ? 1 : 0.92))
+                .scaleEffect(press ? 0.82 : (hover ? 1.1 : 1.0))
+                .rotationEffect(.degrees(press ? 18 : 0))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { hover = $0 }
+        .help("✨")
+        .animation(.spring(response: 0.18, dampingFraction: 0.55), value: press)
+        .animation(.easeOut(duration: 0.12), value: hover)
+    }
+}
+
+private struct ScreenshotButton: View {
+    @ObservedObject var viewModel: SiftViewModel
+    @State private var hover = false
+
+    var body: some View {
+        Button {
+            viewModel.startScreenshotCapture()
+        } label: {
+            Image(systemName: "selection.pin.in.out")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white.opacity(hover ? 0.85 : 0.55))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(hover ? Color.white.opacity(0.08) : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { hover = $0 }
+        .help("Capture a region (or type \"screenshot\")")
+        .animation(.easeOut(duration: 0.12), value: hover)
+    }
+}
+
 private struct SleepEyeButton: View {
     @ObservedObject var viewModel: SiftViewModel
     @State private var hover = false
@@ -806,3 +967,4 @@ private struct SleepEyeButton: View {
         .animation(.easeOut(duration: 0.18), value: viewModel.sleepDisabled)
     }
 }
+

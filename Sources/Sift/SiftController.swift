@@ -9,12 +9,41 @@ final class SiftController {
     private var backdrop: BackdropWindow?
     private let viewModel: SiftViewModel
 
-    init(store: Store) {
+    private var confettiWindows: [ConfettiWindow] = []
+
+    init(store: Store, onOpenSettings: @escaping () -> Void = {}) {
         self.store = store
         self.viewModel = SiftViewModel(store: store)
         viewModel.onLaunch = { [weak self] item in self?.launch(item) }
         viewModel.onEscape = { [weak self] in self?.hide() }
         viewModel.onDeviceActivated = { [weak self] in self?.hide() }
+        viewModel.onOpenSettings = { [weak self] in
+            self?.hide()
+            onOpenSettings()
+        }
+        viewModel.onLogoTap = { [weak self] in
+            self?.triggerConfetti()
+        }
+    }
+
+    private func triggerConfetti() {
+        guard let panel = panel, panel.isVisible, let screen = panel.screen else { return }
+        let panelFrame = panel.frame
+        let screenFrame = screen.frame
+        let logoCocoaX = panelFrame.minX + 32
+        let logoCocoaY = panelFrame.maxY - 26
+        let swiftX = logoCocoaX - screenFrame.minX
+        let swiftY = screenFrame.maxY - logoCocoaY
+
+        let win = ConfettiWindow(
+            screenFrame: screenFrame,
+            origin: CGPoint(x: swiftX, y: swiftY),
+            seed: UInt64.random(in: 0..<UInt64.max)
+        )
+        confettiWindows.append(win)
+        win.onDismiss = { [weak self, weak win] in
+            self?.confettiWindows.removeAll { $0 === win }
+        }
     }
 
     func toggle() {
@@ -32,11 +61,11 @@ final class SiftController {
         if let screen, config.backdropEnabled {
             PanelPlacement.presentBackdrop(on: screen, intensity: config.backdropIntensity, psychedelic: config.psychedelicEnabled, psychedelicIntensity: config.psychedelicIntensity, existing: &backdrop)
         }
-        positionPanel(panel)
+        positionPanel(panel, position: config.panelPosition)
         panel.makeKeyAndOrderFront(nil)
         DispatchQueue.main.async { [weak self, weak panel] in
             guard let self, let panel else { return }
-            self.positionPanel(panel)
+            self.positionPanel(panel, position: config.panelPosition)
         }
     }
 
@@ -57,8 +86,9 @@ final class SiftController {
         return panel
     }
 
-    private func positionPanel(_ panel: SiftPanel) {
+    private func positionPanel(_ panel: SiftPanel, position: PanelPosition? = nil) {
         guard let screen = PanelPlacement.activeScreen() else { return }
-        PanelPlacement.position(panel, position: store.load().panelPosition, on: screen)
+        let target = position ?? store.load().panelPosition
+        PanelPlacement.position(panel, position: target, on: screen)
     }
 }

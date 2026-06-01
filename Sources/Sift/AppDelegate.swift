@@ -19,7 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DebugLog.write("AppDelegate.didFinishLaunching")
         store = Store()
         let bookmarkStore = BookmarkStore()
-        launcher = SiftController(store: store)
+        launcher = SiftController(store: store, onOpenSettings: { [weak self] in
+            self?.settings.show()
+        })
         bookmarks = BookmarkController(store: store, bookmarkStore: bookmarkStore)
         settings = SettingsWindowController(
             store: store,

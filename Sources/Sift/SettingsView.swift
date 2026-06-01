@@ -26,6 +26,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var pairedDevices: [DeviceItem] = []
     @Published var sleepCommandsEnabled: Bool = false
     @Published var sudoersConfigured: Bool = false
+    @Published var screenshotEnabled: Bool = false
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
@@ -61,6 +62,7 @@ final class SettingsViewModel: ObservableObject {
         self.disabledDeviceIDs = config.disabledDeviceIDs
         self.sleepCommandsEnabled = config.sleepCommandsEnabled
         self.sudoersConfigured = Self.sudoersRuleAvailable()
+        self.screenshotEnabled = config.screenshotEnabled
         self.managedBookmarks = bookmarkStore.load()
         self.apps = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
     }
@@ -93,6 +95,11 @@ final class SettingsViewModel: ObservableObject {
         sleepCommandsEnabled = value
         persist()
         onSleepConfigChanged()
+    }
+
+    func setScreenshotEnabled(_ value: Bool) {
+        screenshotEnabled = value
+        persist()
     }
 
     func refreshSudoersStatus() {
@@ -241,7 +248,8 @@ final class SettingsViewModel: ObservableObject {
             statusStripEnabled: statusStripEnabled,
             hideStripWhenBuiltInOnly: hideStripWhenBuiltInOnly,
             disabledDeviceIDs: disabledDeviceIDs,
-            sleepCommandsEnabled: sleepCommandsEnabled
+            sleepCommandsEnabled: sleepCommandsEnabled,
+            screenshotEnabled: screenshotEnabled
         ))
     }
 
@@ -664,7 +672,7 @@ private struct AppRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.path))
+            Image(nsImage: AppIconCache.shared.icon(forPath: item.path))
                 .resizable()
                 .frame(width: 22, height: 22)
             Text(item.name)
@@ -869,6 +877,29 @@ private struct GeneralPane: View {
                         set: { viewModel.setLaunchAtLogin($0) }
                     )
                 )
+            }
+
+            Card(title: "SCREENSHOT", caption: viewModel.screenshotEnabled ? "ON" : "OFF") {
+                VStack(alignment: .leading, spacing: 10) {
+                    ToggleRow(
+                        title: "Capture region tool",
+                        description: "Adds a button next to the eye in the search field, and a \"Screenshot region\" command to the launcher. Draws a rectangle on the screen, opens a markup view to annotate, Enter copies it to clipboard.",
+                        isOn: Binding(
+                            get: { viewModel.screenshotEnabled },
+                            set: { viewModel.setScreenshotEnabled($0) }
+                        )
+                    )
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.muted)
+                            .padding(.top, 1)
+                        Text("First use will prompt for Screen Recording permission in System Settings.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Palette.subtle)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
 
             Card(title: "SLEEP", caption: viewModel.sleepCommandsEnabled ? "ON" : "OFF") {
