@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 380" width="600" height="380" role="img" aria-label="Sift launcher panel: search query 'tea' with results for Microsoft Teams, Tealium, a tea.example.com bookmark, the Disable sleep command, and a Now Playing strip at the bottom">
+  <defs>
+    <linearGradient id="panelBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16191F"/>
+      <stop offset="1" stop-color="#0B0D12"/>
+    </linearGradient>
+    <linearGradient id="frostHi" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="selRow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5BAFFF" stop-opacity="0.40"/>
+      <stop offset="1" stop-color="#5BAFFF" stop-opacity="0.28"/>
+    </linearGradient>
+    <radialGradient id="logoGlow" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0" stop-color="#7AF7FF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#7AF7FF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dy="6"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- background to suggest "panel floating over desktop" -->
+  <rect width="600" height="380" fill="#0A0C12"/>
+  <g opacity="0.18" fill="#FFFFFF">
+    <circle cx="60" cy="60" r="1.5"/>
+    <circle cx="120" cy="40" r="1"/>
+    <circle cx="180" cy="80" r="1.2"/>
+    <circle cx="500" cy="50" r="1"/>
+    <circle cx="540" cy="100" r="1.3"/>
+    <circle cx="80" cy="320" r="1"/>
+    <circle cx="540" cy="340" r="1.3"/>
+    <circle cx="200" cy="350" r="1"/>
+  </g>
+
+  <!-- panel -->
+  <g filter="url(#softShadow)">
+    <rect x="20" y="20" width="560" height="340" rx="18" fill="url(#panelBg)"/>
+    <rect x="20" y="20" width="560" height="170" rx="18" fill="url(#frostHi)"/>
+    <rect x="20.5" y="20.5" width="559" height="339" rx="17.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.06"/>
+  </g>
+
+  <!-- search row -->
+  <g transform="translate(42,38)">
+    <!-- logo -->
+    <circle cx="10" cy="22" r="14" fill="url(#logoGlow)"/>
+    <g stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="1.6" stroke-linecap="round">
+      <line x1="10" y1="14" x2="10" y2="30"/>
+      <line x1="2" y1="22" x2="18" y2="22"/>
+      <line x1="4.5" y1="16.5" x2="15.5" y2="27.5"/>
+      <line x1="15.5" y1="16.5" x2="4.5" y2="27.5"/>
+    </g>
+    <circle cx="10" cy="22" r="2.6" fill="#7AF7FF"/>
+
+    <!-- search text -->
+    <text x="40" y="30" font-family="-apple-system, system-ui, sans-serif" font-size="24" font-weight="300" fill="#FFFFFF" fill-opacity="0.92">tea</text>
+    <!-- caret -->
+    <rect x="78" y="10" width="1.5" height="26" fill="#7AF7FF"/>
+
+    <!-- screenshot icon -->
+    <g transform="translate(470,12)" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.4" fill="none" stroke-linecap="round">
+      <path d="M0 4 L0 0 L4 0 M16 0 L20 0 L20 4 M0 16 L0 20 L4 20 M16 20 L20 20 L20 16"/>
+    </g>
+
+    <!-- sleep eye (yellow = sleep disabled) -->
+    <g transform="translate(508,12)">
+      <ellipse cx="10" cy="10" rx="9" ry="6" fill="none" stroke="#FFD42E" stroke-width="1.6"/>
+      <circle cx="10" cy="10" r="3.4" fill="#FFD42E"/>
+      <circle cx="10" cy="10" r="11" fill="#FFD42E" fill-opacity="0.18"/>
+    </g>
+  </g>
+
+  <!-- divider under search -->
+  <rect x="20" y="86" width="560" height="0.5" fill="#FFFFFF" fill-opacity="0.10"/>
+
+  <!-- result rows -->
+  <g font-family="-apple-system, system-ui, sans-serif">
+
+    <!-- row 1: Microsoft Teams (selected) -->
+    <rect x="20" y="86" width="560" height="48" fill="url(#selRow)"/>
+    <g transform="translate(42,96)">
+      <rect x="0" y="0" width="32" height="32" rx="7" fill="#5059C9"/>
+      <text x="16" y="22" text-anchor="middle" font-size="18" font-weight="700" fill="#FFFFFF">T</text>
+    </g>
+    <text x="88" y="115" font-size="16" fill="#FFFFFF" fill-opacity="0.85">Microsoft </text>
+    <text x="161" y="115" font-size="16" font-weight="600" fill="#FFFFFF">T</text>
+    <text x="170" y="115" font-size="16" font-weight="600" fill="#FFFFFF">e</text>
+    <text x="178" y="115" font-size="16" font-weight="600" fill="#FFFFFF">a</text>
+    <text x="186" y="115" font-size="16" fill="#FFFFFF" fill-opacity="0.85">ms</text>
+
+    <!-- row 2: Tealium -->
+    <g transform="translate(42,144)">
+      <rect x="0" y="0" width="32" height="32" rx="7" fill="#0FB07D"/>
+      <text x="16" y="22" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">t</text>
+    </g>
+    <text x="88" y="163" font-size="16" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">T</text>
+    <text x="97" y="163" font-size="16" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">e</text>
+    <text x="105" y="163" font-size="16" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">a</text>
+    <text x="114" y="163" font-size="16" fill="#FFFFFF" fill-opacity="0.85">lium</text>
+
+    <!-- row 3: bookmark tea.example.com (env group) -->
+    <g transform="translate(42,192)">
+      <rect x="0" y="0" width="32" height="32" rx="7" fill="#FFFFFF" fill-opacity="0.10"/>
+      <circle cx="16" cy="16" r="7" fill="none" stroke="#FFFFFF" stroke-opacity="0.7" stroke-width="1.4"/>
+      <path d="M9 16 H23 M16 9 V23 M10 11 Q16 16 22 11 M10 21 Q16 16 22 21" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1" fill="none"/>
+    </g>
+    <text x="88" y="211" font-size="16" font-weight="600" fill="#FFFFFF" fill-opacity="0.92">tea</text>
+    <text x="113" y="211" font-size="16" fill="#FFFFFF" fill-opacity="0.85">.example.com</text>
+    <text x="476" y="211" font-size="10.5" font-family="ui-monospace, Menlo, monospace" fill="#FFFFFF" fill-opacity="0.55">tea.example.com</text>
+    <path d="M566 207 l4 4 l-4 4" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="1.6" stroke-linejoin="round" fill="none"/>
+
+    <!-- row 4: Disable sleep -->
+    <g transform="translate(42,240)">
+      <rect x="0" y="0" width="32" height="32" rx="7" fill="#FFD42E" fill-opacity="0.18"/>
+      <ellipse cx="16" cy="16" rx="8" ry="5" fill="none" stroke="#FFD42E" stroke-width="1.6"/>
+      <circle cx="16" cy="16" r="3" fill="#FFD42E"/>
+    </g>
+    <text x="88" y="259" font-size="16" fill="#FFFFFF" fill-opacity="0.85">Disable sl</text>
+    <text x="170" y="259" font-size="16" font-weight="600" fill="#FFFFFF">e</text>
+    <text x="179" y="259" font-size="16" fill="#FFFFFF" fill-opacity="0.85">ep</text>
+    <text x="572" y="259" text-anchor="end" font-size="9.5" letter-spacing="1.4" font-family="ui-monospace, Menlo, monospace" font-weight="600" fill="#FFD42E" fill-opacity="0.85">SYSTEM</text>
+  </g>
+
+  <!-- divider above strip -->
+  <rect x="20" y="298" width="560" height="0.5" fill="#FFFFFF" fill-opacity="0.10"/>
+
+  <!-- now-playing strip -->
+  <g transform="translate(42,310)">
+    <g fill="#5BEC8C">
+      <rect x="0" y="9" width="2.2" height="6" rx="1.1"/>
+      <rect x="4.5" y="6" width="2.2" height="12" rx="1.1"/>
+      <rect x="9" y="3" width="2.2" height="18" rx="1.1"/>
+      <rect x="13.5" y="0" width="2.2" height="24" rx="1.1"/>
+      <rect x="18" y="3" width="2.2" height="18" rx="1.1"/>
+      <rect x="22.5" y="7" width="2.2" height="10" rx="1.1"/>
+      <rect x="27" y="4" width="2.2" height="16" rx="1.1"/>
+      <rect x="31.5" y="2" width="2.2" height="20" rx="1.1"/>
+      <rect x="36" y="5" width="2.2" height="14" rx="1.1"/>
+      <rect x="40.5" y="8" width="2.2" height="8" rx="1.1"/>
+    </g>
+    <text x="52" y="16" font-family="ui-monospace, Menlo, monospace" font-size="9.5" font-weight="600" letter-spacing="1.8" fill="#FFFFFF" fill-opacity="0.5">PLAYING</text>
+
+    <!-- bose pill -->
+    <rect x="108" y="3" width="64" height="18" rx="6" fill="#FFFFFF" fill-opacity="0.06"/>
+    <text x="117" y="15" font-family="-apple-system, system-ui" font-size="11.5" font-weight="500" fill="#FFFFFF" fill-opacity="0.92">🎧 Bose</text>
+
+    <!-- firefox pill -->
+    <rect x="180" y="3" width="76" height="18" rx="6" fill="#FFFFFF" fill-opacity="0.06"/>
+    <circle cx="191" cy="12" r="6" fill="#FF7139"/>
+    <text x="201" y="15" font-family="-apple-system, system-ui" font-size="11.5" font-weight="500" fill="#FFFFFF" fill-opacity="0.92">Firefox</text>
+
+    <!-- teams pill -->
+    <rect x="264" y="3" width="118" height="18" rx="6" fill="#FFFFFF" fill-opacity="0.06"/>
+    <rect x="270" y="6" width="12" height="12" rx="2" fill="#5059C9"/>
+    <text x="274" y="15" font-family="-apple-system, system-ui" font-size="9" font-weight="700" fill="#FFFFFF">T</text>
+    <text x="287" y="15" font-family="-apple-system, system-ui" font-size="11.5" font-weight="500" fill="#FFFFFF" fill-opacity="0.92">Microsoft Teams</text>
+  </g>
+</svg>

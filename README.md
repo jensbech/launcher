@@ -6,7 +6,7 @@
 
 <p align="center">A minimal Spotlight-style macOS launcher. ⌘Space to find apps, bookmarks, devices, system controls, and what's playing — fast, frosted, and fully keyboard-driven.</p>
 
-![Sift search panel showing fuzzy matches with highlighted letters](docs/screenshot.png)
+![Sift search panel: query 'tea' surfaces Microsoft Teams (selected), Tealium, a tea.example.com bookmark and the Disable sleep command, with the now-playing audio strip pinned to the bottom](docs/screenshot.svg)
 
 This app is fully vibe coded.
 
