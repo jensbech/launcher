@@ -40,6 +40,12 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private var processListListenerInstalled = false
     private var rebuildWorkItem: DispatchWorkItem?
 
+    private var ringBuffer: [Float] = Array(repeating: 0, count: barCount)
+    private var ringHead: Int = 0
+    private var displayBuffer: [Float] = Array(repeating: 0, count: barCount)
+    private var silentTickCount: Int = 0
+    private static let silentPauseThreshold: Int = 20
+
     private init() {
         if #available(macOS 14.2, *) {
             setupTap()
@@ -199,7 +205,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
 
     private func scheduleRefresh() {
         refreshTimer?.invalidate()
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -218,16 +224,34 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
 
         _ = calls
 
+        let hasSignal = rms != 0 || peak != 0
+        if !hasSignal && level == 0 && silentTickCount >= Self.silentPauseThreshold {
+            return
+        }
+
         let raw = min(1.0, max(rms * 3.0, peak * 0.7))
         let smoothed = level * 0.55 + raw * 0.45
 
-        var newBars = bars
-        for i in 0..<(Self.barCount - 1) {
-            newBars[i] = newBars[i + 1]
+        ringBuffer[ringHead] = smoothed
+        ringHead = (ringHead + 1) % Self.barCount
+
+        let count = Self.barCount
+        for i in 0..<count {
+            displayBuffer[i] = ringBuffer[(ringHead + i) % count]
         }
-        newBars[Self.barCount - 1] = smoothed
-        bars = newBars
-        level = smoothed
+
+        if displayBuffer != bars {
+            bars = displayBuffer
+        }
+        if level != smoothed {
+            level = smoothed
+        }
+
+        if hasSignal {
+            silentTickCount = 0
+        } else {
+            silentTickCount &+= 1
+        }
     }
 
     private func teardown() {
