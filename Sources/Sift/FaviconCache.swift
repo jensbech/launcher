@@ -12,7 +12,8 @@ final class FaviconCache: ObservableObject {
     private var failed: Set<String> = []
     private let cacheDir: URL
     private let session: URLSession
-    private var pendingHosts: [String] = []
+    private var pendingHosts: Set<String> = []
+    private var pendingQueue: [String] = []
     private var activeFetches = 0
     private let maxConcurrent = 6
 
@@ -83,18 +84,20 @@ final class FaviconCache: ObservableObject {
     private func enqueue(host: String, scheme: String) {
         if icons[host] != nil { return }
         if inFlight.contains(host) || failed.contains(host) { return }
-        if pendingHosts.contains(where: { $0 == host }) { return }
-        pendingHosts.append("\(scheme)|\(host)")
+        if pendingHosts.contains(host) { return }
+        pendingHosts.insert(host)
+        pendingQueue.append("\(scheme)|\(host)")
         pumpQueue()
     }
 
     private func pumpQueue() {
-        while activeFetches < maxConcurrent, !pendingHosts.isEmpty {
-            let entry = pendingHosts.removeFirst()
+        while activeFetches < maxConcurrent, !pendingQueue.isEmpty {
+            let entry = pendingQueue.removeFirst()
             let parts = entry.split(separator: "|", maxSplits: 1).map(String.init)
             guard parts.count == 2 else { continue }
             let scheme = parts[0]
             let host = parts[1]
+            pendingHosts.remove(host)
             if icons[host] != nil { continue }
             if inFlight.contains(host) || failed.contains(host) { continue }
             inFlight.insert(host)
