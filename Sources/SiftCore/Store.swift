@@ -133,6 +133,7 @@ public struct Config: Codable, Equatable {
     public var disabledBundleIDs: Set<String>
     public var launchAtLogin: Bool
     public var panelPosition: PanelPosition
+    public var perScreenPanelPositions: [String: PanelPosition]
     public var backdropEnabled: Bool
     public var backdropIntensity: Double
     public var psychedelicEnabled: Bool
@@ -157,6 +158,7 @@ public struct Config: Codable, Equatable {
         disabledBundleIDs: Set<String> = [],
         launchAtLogin: Bool = false,
         panelPosition: PanelPosition = .topCenter,
+        perScreenPanelPositions: [String: PanelPosition] = [:],
         backdropEnabled: Bool = false,
         backdropIntensity: Double = Config.defaultBackdropIntensity,
         psychedelicEnabled: Bool = false,
@@ -177,6 +179,7 @@ public struct Config: Codable, Equatable {
         self.disabledBundleIDs = disabledBundleIDs
         self.launchAtLogin = launchAtLogin
         self.panelPosition = panelPosition
+        self.perScreenPanelPositions = perScreenPanelPositions
         self.backdropEnabled = backdropEnabled
         self.backdropIntensity = max(0, min(1, backdropIntensity))
         self.psychedelicEnabled = psychedelicEnabled
@@ -199,6 +202,7 @@ public struct Config: Codable, Equatable {
         case disabledBundleIDs
         case launchAtLogin
         case panelPosition
+        case perScreenPanelPositions
         case backdropEnabled
         case backdropIntensity
         case psychedelicEnabled
@@ -222,6 +226,7 @@ public struct Config: Codable, Equatable {
         self.disabledBundleIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledBundleIDs) ?? []
         self.launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         self.panelPosition = try container.decodeIfPresent(PanelPosition.self, forKey: .panelPosition) ?? .topCenter
+        self.perScreenPanelPositions = try container.decodeIfPresent([String: PanelPosition].self, forKey: .perScreenPanelPositions) ?? [:]
         self.backdropEnabled = try container.decodeIfPresent(Bool.self, forKey: .backdropEnabled) ?? false
         let rawIntensity = try container.decodeIfPresent(Double.self, forKey: .backdropIntensity) ?? Config.defaultBackdropIntensity
         self.backdropIntensity = max(0, min(1, rawIntensity))
@@ -240,6 +245,13 @@ public struct Config: Codable, Equatable {
         self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
         self.sleepCommandsEnabled = try container.decodeIfPresent(Bool.self, forKey: .sleepCommandsEnabled) ?? false
         self.screenshotEnabled = try container.decodeIfPresent(Bool.self, forKey: .screenshotEnabled) ?? false
+    }
+
+    public func panelPosition(forScreenName name: String?) -> PanelPosition {
+        if let name, let pos = perScreenPanelPositions[name] {
+            return pos
+        }
+        return panelPosition
     }
 }
 

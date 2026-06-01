@@ -9,6 +9,9 @@ final class SettingsViewModel: ObservableObject {
     @Published var filter: String = ""
     @Published var launchAtLogin: Bool = false
     @Published var panelPosition: PanelPosition = .topCenter
+    @Published var perScreenPanelPositions: [String: PanelPosition] = [:]
+    @Published var connectedScreenNames: [String] = []
+    @Published var selectedScreenContext: String? = nil
     @Published var backdropEnabled: Bool = false
     @Published var backdropIntensity: Double = Config.defaultBackdropIntensity
     @Published var psychedelicEnabled: Bool = false
@@ -48,6 +51,8 @@ final class SettingsViewModel: ObservableObject {
         self.disabled = config.disabledBundleIDs
         self.launchAtLogin = config.launchAtLogin
         self.panelPosition = config.panelPosition
+        self.perScreenPanelPositions = config.perScreenPanelPositions
+        self.connectedScreenNames = NSScreen.screens.compactMap { $0.localizedName }
         self.backdropEnabled = config.backdropEnabled
         self.backdropIntensity = config.backdropIntensity
         self.psychedelicEnabled = config.psychedelicEnabled
@@ -172,6 +177,31 @@ final class SettingsViewModel: ObservableObject {
         persist()
     }
 
+    func panelPosition(forContext name: String?) -> PanelPosition {
+        if let name, let pos = perScreenPanelPositions[name] {
+            return pos
+        }
+        return panelPosition
+    }
+
+    func setPanelPosition(forContext name: String?, value: PanelPosition) {
+        if let name {
+            perScreenPanelPositions[name] = value
+        } else {
+            panelPosition = value
+        }
+        persist()
+    }
+
+    func clearPanelPosition(forContext name: String) {
+        perScreenPanelPositions.removeValue(forKey: name)
+        persist()
+    }
+
+    func refreshConnectedScreens() {
+        connectedScreenNames = NSScreen.screens.compactMap { $0.localizedName }
+    }
+
     func setBackdropEnabled(_ value: Bool) {
         backdropEnabled = value
         persist()
@@ -250,6 +280,7 @@ final class SettingsViewModel: ObservableObject {
             disabledBundleIDs: disabled,
             launchAtLogin: launchAtLogin,
             panelPosition: panelPosition,
+            perScreenPanelPositions: perScreenPanelPositions,
             backdropEnabled: backdropEnabled,
             backdropIntensity: backdropIntensity,
             psychedelicEnabled: psychedelicEnabled,
@@ -1211,13 +1242,55 @@ private struct IntensityRow: View {
 private struct PositionPane: View {
     @ObservedObject var viewModel: SettingsViewModel
 
+    private var contextName: String? { viewModel.selectedScreenContext }
+    private var contextPosition: PanelPosition { viewModel.panelPosition(forContext: contextName) }
+    private var isOverridden: Bool {
+        guard let name = contextName else { return false }
+        return viewModel.perScreenPanelPositions[name] != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Card(title: "ANCHOR", caption: positionLabel(viewModel.panelPosition).uppercased()) {
+            Card(title: "SCREEN", caption: (contextName ?? "Default").uppercased()) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("", selection: Binding(
+                        get: { viewModel.selectedScreenContext ?? "" },
+                        set: { viewModel.selectedScreenContext = $0.isEmpty ? nil : $0 }
+                    )) {
+                        Text("Default (any screen)").tag("")
+                        ForEach(viewModel.connectedScreenNames, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+
+                    if let name = contextName {
+                        HStack(spacing: 8) {
+                            Text(isOverridden ? "Custom anchor for this screen." : "Inheriting the Default anchor.")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Palette.subtle)
+                            Spacer()
+                            if isOverridden {
+                                Button("Reset to default") { viewModel.clearPanelPosition(forContext: name) }
+                                    .buttonStyle(.plain)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    } else {
+                        Text("Fallback anchor used on any screen without its own override.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Palette.subtle)
+                    }
+                }
+            }
+
+            Card(title: "ANCHOR", caption: positionLabel(contextPosition).uppercased()) {
                 PositionPicker(
                     selection: Binding(
-                        get: { viewModel.panelPosition },
-                        set: { viewModel.setPanelPosition($0) }
+                        get: { viewModel.panelPosition(forContext: contextName) },
+                        set: { viewModel.setPanelPosition(forContext: contextName, value: $0) }
                     )
                 )
                 .frame(maxWidth: .infinity)
@@ -1229,13 +1302,14 @@ private struct PositionPane: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
                         .padding(.top, 1)
-                    Text("Sift will appear at this anchor on whichever screen your cursor lives. The 7×7 grid lets you fine-tune corners as well as edges.")
+                    Text("Each connected display can have its own anchor. Default covers any screen you haven't customized yet — handy when you plug in something new.")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.subtle)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        .onAppear { viewModel.refreshConnectedScreens() }
     }
 }
 

@@ -32,11 +32,11 @@ final class BookmarkController {
         if let screen, config.backdropEnabled {
             PanelPlacement.presentBackdrop(on: screen, intensity: config.backdropIntensity, psychedelic: config.psychedelicEnabled, psychedelicIntensity: config.psychedelicIntensity, disabledPsychedelicEffects: config.disabledPsychedelicEffects, existing: &backdrop)
         }
-        positionPanel(panel, position: config.panelPosition)
+        positionPanel(panel)
         panel.makeKeyAndOrderFront(nil)
         DispatchQueue.main.async { [weak self, weak panel] in
             guard let self, let panel else { return }
-            self.positionPanel(panel, position: config.panelPosition)
+            self.positionPanel(panel)
         }
     }
 
@@ -74,7 +74,7 @@ final class BookmarkController {
 
     private func positionPanel(_ panel: SiftPanel, position: PanelPosition? = nil) {
         guard let screen = PanelPlacement.activeScreen() else { return }
-        let target = position ?? store.load().panelPosition
+        let target = position ?? store.load().panelPosition(forScreenName: screen.localizedName)
         PanelPlacement.position(panel, position: target, on: screen)
     }
 }
