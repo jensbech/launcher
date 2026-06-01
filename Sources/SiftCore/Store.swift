@@ -255,8 +255,12 @@ public struct Config: Codable, Equatable {
     }
 }
 
-public final class Store {
+public final class Store: @unchecked Sendable {
     public let fileURL: URL
+
+    private let lock = NSLock()
+    private var cachedConfig: Config?
+    private var cachedMtime: Date?
 
     public init(fileURL: URL = Store.defaultURL) {
         self.fileURL = fileURL
@@ -268,10 +272,29 @@ public final class Store {
     }
 
     public func load() -> Config {
+        let currentMtime = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+
+        lock.lock()
+        if let cached = cachedConfig, currentMtime == cachedMtime {
+            defer { lock.unlock() }
+            return cached
+        }
+        lock.unlock()
+
         guard let data = try? Data(contentsOf: fileURL),
               let config = try? JSONDecoder().decode(Config.self, from: data) else {
-            return Config()
+            let fallback = Config()
+            lock.lock()
+            cachedConfig = fallback
+            cachedMtime = currentMtime
+            lock.unlock()
+            return fallback
         }
+
+        lock.lock()
+        cachedConfig = config
+        cachedMtime = currentMtime
+        lock.unlock()
         return config
     }
 
@@ -284,5 +307,10 @@ public final class Store {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(config) else { return }
         try? data.write(to: fileURL)
+        let newMtime = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+        lock.lock()
+        cachedConfig = config
+        cachedMtime = newMtime
+        lock.unlock()
     }
 }
