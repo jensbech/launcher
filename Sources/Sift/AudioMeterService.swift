@@ -13,6 +13,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     @Published private(set) var isAvailable: Bool = false
     @Published private(set) var lastError: String?
     @Published private(set) var activeSources: [SourceApp] = []
+    @Published private(set) var runningOutputDeviceIDs: Set<String> = []
 
     struct SourceApp: Equatable, Identifiable {
         let id: String
@@ -54,6 +55,29 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             scheduleSourcePolling()
         }
         scheduleRefresh()
+        refreshRunningOutputs()
+    }
+
+    private func refreshRunningOutputs() {
+        let outputs = AudioService.outputDevices()
+        var running: Set<String> = []
+        for device in outputs {
+            if AudioService.isRunning(deviceID: device.id) {
+                running.insert(device.id)
+            }
+        }
+        if running != runningOutputDeviceIDs {
+            if Thread.isMainThread {
+                runningOutputDeviceIDs = running
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if running != self.runningOutputDeviceIDs {
+                        self.runningOutputDeviceIDs = running
+                    }
+                }
+            }
+        }
     }
 
     @available(macOS 14.2, *)
@@ -285,6 +309,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             DispatchQueue.main
         ) { [weak self] _, _ in
             self?.scheduleRebuild()
+            self?.refreshRunningOutputs()
         }
     }
 
@@ -363,6 +388,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         if collected != activeSources {
             activeSources = collected
         }
+        refreshRunningOutputs()
     }
 
     private func isProcessRunningOutput(_ id: AudioObjectID) -> Bool {

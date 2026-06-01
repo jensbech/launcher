@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import SiftCore
 
 @MainActor
@@ -149,6 +150,7 @@ final class SiftViewModel: ObservableObject {
 
     private var copyFlashTask: Task<Void, Never>? = nil
     private var pendingSearchTask: Task<Void, Never>? = nil
+    private var runningOutputsCancellable: AnyCancellable?
 
     private static let searchDebounceNanos: UInt64 = 40_000_000
 
@@ -177,6 +179,11 @@ final class SiftViewModel: ObservableObject {
         self.bookmarkStore = bookmarkStore
         self.usage = usageStore.load()
         refreshIndex()
+        runningOutputsCancellable = AudioMeterService.shared.$runningOutputDeviceIDs
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.recomputeVisibleStatusDevices()
+            }
     }
 
     func refreshIndex() {
@@ -266,8 +273,9 @@ final class SiftViewModel: ObservableObject {
     }
 
     private func recomputeVisibleStatusDevices() {
+        let runningIDs = AudioMeterService.shared.runningOutputDeviceIDs
         let playing = statusDevices.filter { device in
-            device.kind == .audioOutput && AudioService.isRunning(deviceID: device.id)
+            device.kind == .audioOutput && runningIDs.contains(device.id)
         }
         guard !playing.isEmpty else {
             visibleStatusDevices = []
