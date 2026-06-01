@@ -6,8 +6,63 @@ enum PsychedelicEffect: Int, CaseIterable {
     case confetti, gridFloor, phyllotaxis, pixelSort, fireflies
     case sunburst, ekg, bouncingBalls, sonar, hexCells
 
+    var key: String {
+        switch self {
+        case .waves: return "waves"
+        case .plasma: return "plasma"
+        case .aurora: return "aurora"
+        case .starfield: return "starfield"
+        case .matrix: return "matrix"
+        case .tunnel: return "tunnel"
+        case .spirograph: return "spirograph"
+        case .lightning: return "lightning"
+        case .crt: return "crt"
+        case .vortex: return "vortex"
+        case .confetti: return "confetti"
+        case .gridFloor: return "gridFloor"
+        case .phyllotaxis: return "phyllotaxis"
+        case .pixelSort: return "pixelSort"
+        case .fireflies: return "fireflies"
+        case .sunburst: return "sunburst"
+        case .ekg: return "ekg"
+        case .bouncingBalls: return "bouncingBalls"
+        case .sonar: return "sonar"
+        case .hexCells: return "hexCells"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .waves: return "Waves"
+        case .plasma: return "Plasma"
+        case .aurora: return "Aurora"
+        case .starfield: return "Starfield"
+        case .matrix: return "Matrix"
+        case .tunnel: return "Tunnel"
+        case .spirograph: return "Spirograph"
+        case .lightning: return "Lightning"
+        case .crt: return "CRT"
+        case .vortex: return "Vortex"
+        case .confetti: return "Confetti"
+        case .gridFloor: return "Grid floor"
+        case .phyllotaxis: return "Phyllotaxis"
+        case .pixelSort: return "Pixel sort"
+        case .fireflies: return "Fireflies"
+        case .sunburst: return "Sunburst"
+        case .ekg: return "EKG"
+        case .bouncingBalls: return "Bouncing balls"
+        case .sonar: return "Sonar"
+        case .hexCells: return "Hex cells"
+        }
+    }
+
     static func random() -> PsychedelicEffect {
         allCases.randomElement() ?? .waves
+    }
+
+    static func random(excluding disabled: Set<String>) -> PsychedelicEffect? {
+        let pool = allCases.filter { !disabled.contains($0.key) }
+        return pool.randomElement()
     }
 }
 
@@ -22,37 +77,56 @@ struct PsychedelicView: View {
 
     var body: some View {
         Group {
-            switch effect {
-            case .waves: WavesEffect()
-            case .plasma: PlasmaEffect()
-            case .aurora: AuroraEffect()
-            case .starfield: StarfieldEffect()
-            case .matrix: MatrixEffect()
-            case .tunnel: TunnelEffect()
-            case .spirograph: SpirographEffect()
-            case .lightning: LightningEffect()
-            case .crt: CRTEffect()
-            case .vortex: VortexEffect()
-            case .confetti: ConfettiEffect()
-            case .gridFloor: GridFloorEffect()
-            case .phyllotaxis: PhyllotaxisEffect()
-            case .pixelSort: PixelSortEffect()
-            case .fireflies: FirefliesEffect()
-            case .sunburst: SunburstEffect()
-            case .ekg: EKGEffect()
-            case .bouncingBalls: BouncingBallsEffect()
-            case .sonar: SonarEffect()
-            case .hexCells: HexCellsEffect()
+            if intensity < 0.05 {
+                Color.clear
+            } else {
+                Group {
+                    switch effect {
+                    case .waves: WavesEffect(intensity: intensity)
+                    case .plasma: PlasmaEffect(intensity: intensity)
+                    case .aurora: AuroraEffect(intensity: intensity)
+                    case .starfield: StarfieldEffect(intensity: intensity)
+                    case .matrix: MatrixEffect(intensity: intensity)
+                    case .tunnel: TunnelEffect(intensity: intensity)
+                    case .spirograph: SpirographEffect(intensity: intensity)
+                    case .lightning: LightningEffect(intensity: intensity)
+                    case .crt: CRTEffect(intensity: intensity)
+                    case .vortex: VortexEffect(intensity: intensity)
+                    case .confetti: ConfettiEffect(intensity: intensity)
+                    case .gridFloor: GridFloorEffect(intensity: intensity)
+                    case .phyllotaxis: PhyllotaxisEffect(intensity: intensity)
+                    case .pixelSort: PixelSortEffect(intensity: intensity)
+                    case .fireflies: FirefliesEffect(intensity: intensity)
+                    case .sunburst: SunburstEffect(intensity: intensity)
+                    case .ekg: EKGEffect(intensity: intensity)
+                    case .bouncingBalls: BouncingBallsEffect(intensity: intensity)
+                    case .sonar: SonarEffect(intensity: intensity)
+                    case .hexCells: HexCellsEffect(intensity: intensity)
+                    }
+                }
+                .opacity(intensity)
             }
         }
-        .opacity(intensity)
         .allowsHitTesting(false)
     }
 }
 
+@ViewBuilder
+private func psychedelicCanvas<Content: View>(
+    intensity: Double,
+    @ViewBuilder content: @escaping (TimelineViewDefaultContext) -> Content
+) -> some View {
+    if intensity >= 0.5 {
+        TimelineView(.animation) { ctx in content(ctx) }
+    } else {
+        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { ctx in content(ctx) }
+    }
+}
+
 private struct WavesEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -134,8 +208,9 @@ private struct PlasmaEffect: View {
         Blob(color: Color(red: 0.10, green: 0.45, blue: 1.00), seed: 6.5, radius: 0.60, ax: 0.44, ay: 0.32, fx: 0.09, fy: 0.04)
     ]
 
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -167,8 +242,9 @@ private struct PlasmaEffect: View {
 }
 
 private struct AuroraEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -207,8 +283,9 @@ private struct AuroraEffect: View {
 }
 
 private struct StarfieldEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -253,8 +330,9 @@ private struct StarfieldEffect: View {
 private struct MatrixEffect: View {
     private static let glyphs: [String] = ["0","1","Ϟ","ψ","Δ","∞","Ξ","λ","Ω","φ","§","◊","◉","#","@","✦","✺","∴","≡","◈"]
 
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -298,8 +376,9 @@ private struct MatrixEffect: View {
 }
 
 private struct TunnelEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -341,8 +420,9 @@ private struct TunnelEffect: View {
 }
 
 private struct SpirographEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -385,8 +465,9 @@ private struct SpirographEffect: View {
 }
 
 private struct LightningEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -461,8 +542,9 @@ private struct LightningEffect: View {
 }
 
 private struct CRTEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -527,8 +609,9 @@ private struct CRTEffect: View {
 }
 
 private struct VortexEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -588,8 +671,9 @@ private struct VortexEffect: View {
 }
 
 private struct ConfettiEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -625,8 +709,9 @@ private struct ConfettiEffect: View {
 }
 
 private struct GridFloorEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -687,8 +772,9 @@ private struct GridFloorEffect: View {
 }
 
 private struct PhyllotaxisEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -722,8 +808,9 @@ private struct PhyllotaxisEffect: View {
 }
 
 private struct PixelSortEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -759,8 +846,9 @@ private struct PixelSortEffect: View {
 }
 
 private struct FirefliesEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -799,8 +887,9 @@ private struct FirefliesEffect: View {
 }
 
 private struct SunburstEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -835,8 +924,9 @@ private struct SunburstEffect: View {
 }
 
 private struct EKGEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -886,8 +976,9 @@ private struct EKGEffect: View {
 }
 
 private struct BouncingBallsEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -936,8 +1027,9 @@ private struct BouncingBallsEffect: View {
 }
 
 private struct SonarEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
@@ -982,8 +1074,9 @@ private struct SonarEffect: View {
 }
 
 private struct HexCellsEffect: View {
+    let intensity: Double
     var body: some View {
-        TimelineView(.animation) { ctx in
+        psychedelicCanvas(intensity: intensity) { ctx in
             GeometryReader { proxy in
                 let t = ctx.date.timeIntervalSinceReferenceDate
                 let size = proxy.size
