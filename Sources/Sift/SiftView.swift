@@ -731,7 +731,6 @@ private struct DeviceStatusStrip: View {
     let devices: [DeviceItem]
     let nowPlaying: NowPlayingService.Info?
     let source: NowPlayingService.Source?
-    @ObservedObject private var meter = AudioMeterService.shared
 
     var body: some View {
         HStack(spacing: 10) {
@@ -759,7 +758,22 @@ private struct DeviceStatusStrip: View {
                         .fill(Color.white.opacity(0.06))
                 )
             }
-            ForEach(meter.activeSources) { src in
+            SourcePillsRow(nowPlaying: nowPlaying, source: source)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+    }
+}
+
+private struct SourcePillsRow: View {
+    let nowPlaying: NowPlayingService.Info?
+    let source: NowPlayingService.Source?
+    @State private var activeSources: [AudioMeterService.SourceApp] = []
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(activeSources) { src in
                 SourcePill(source: src)
             }
             if let info = nowPlaying {
@@ -783,7 +797,7 @@ private struct DeviceStatusStrip: View {
                             .truncationMode(.tail)
                     }
                 }
-            } else if let source, !meter.activeSources.contains(where: { $0.id == source.bundleID }) {
+            } else if let source, !activeSources.contains(where: { $0.id == source.bundleID }) {
                 HStack(spacing: 6) {
                     Image(systemName: "music.note")
                         .font(.system(size: 10, weight: .medium))
@@ -795,10 +809,10 @@ private struct DeviceStatusStrip: View {
                         .truncationMode(.tail)
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .onReceive(AudioMeterService.shared.$activeSources) { newSources in
+            if newSources != activeSources { activeSources = newSources }
+        }
     }
 }
 
