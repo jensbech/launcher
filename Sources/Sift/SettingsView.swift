@@ -13,6 +13,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var backdropIntensity: Double = Config.defaultBackdropIntensity
     @Published var psychedelicEnabled: Bool = false
     @Published var psychedelicIntensity: Double = Config.defaultPsychedelicIntensity
+    @Published var disabledPsychedelicEffects: Set<String> = []
     @Published var includeZenBookmarks: Bool = true
     @Published var managedBookmarks: [Bookmark] = []
     @Published var launcherHotkey: Hotkey = .defaultLauncher
@@ -51,6 +52,7 @@ final class SettingsViewModel: ObservableObject {
         self.backdropIntensity = config.backdropIntensity
         self.psychedelicEnabled = config.psychedelicEnabled
         self.psychedelicIntensity = config.psychedelicIntensity
+        self.disabledPsychedelicEffects = config.disabledPsychedelicEffects
         self.includeZenBookmarks = config.includeZenBookmarks
         self.launcherHotkey = config.launcherHotkey
         self.bookmarksHotkey = config.bookmarksHotkey
@@ -64,7 +66,11 @@ final class SettingsViewModel: ObservableObject {
         self.sudoersConfigured = Self.sudoersRuleAvailable()
         self.screenshotEnabled = config.screenshotEnabled
         self.managedBookmarks = bookmarkStore.load()
-        self.apps = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
+        self.apps = []
+        Task.detached(priority: .utility) {
+            let scanned = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
+            await MainActor.run { self.apps = scanned }
+        }
     }
 
     func refreshPairedDevices() {
@@ -186,6 +192,15 @@ final class SettingsViewModel: ObservableObject {
         persist()
     }
 
+    func setPsychedelicEffectEnabled(_ key: String, enabled: Bool) {
+        if enabled {
+            disabledPsychedelicEffects.remove(key)
+        } else {
+            disabledPsychedelicEffects.insert(key)
+        }
+        persist()
+    }
+
     func setIncludeZenBookmarks(_ value: Bool) {
         includeZenBookmarks = value
         persist()
@@ -239,6 +254,7 @@ final class SettingsViewModel: ObservableObject {
             backdropIntensity: backdropIntensity,
             psychedelicEnabled: psychedelicEnabled,
             psychedelicIntensity: psychedelicIntensity,
+            disabledPsychedelicEffects: disabledPsychedelicEffects,
             includeZenBookmarks: includeZenBookmarks,
             launcherHotkey: launcherHotkey,
             bookmarksHotkey: bookmarksHotkey,
@@ -952,6 +968,10 @@ private struct GeneralPane: View {
                     PsychedelicIntensityRow(viewModel: viewModel)
                         .opacity(viewModel.backdropEnabled && viewModel.psychedelicEnabled ? 1 : 0.45)
                         .disabled(!viewModel.backdropEnabled || !viewModel.psychedelicEnabled)
+
+                    PsychedelicEffectsRow(viewModel: viewModel)
+                        .opacity(viewModel.backdropEnabled && viewModel.psychedelicEnabled ? 1 : 0.45)
+                        .disabled(!viewModel.backdropEnabled || !viewModel.psychedelicEnabled)
                 }
             }
         }
@@ -1038,6 +1058,69 @@ private struct PsychedelicIntensityRow: View {
                 )
                 Image(systemName: "sparkles")
                     .font(.system(size: 12))
+                    .foregroundStyle(Palette.subtle)
+            }
+        }
+    }
+}
+
+private struct PsychedelicEffectsRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    private let columns = [GridItem(.adaptive(minimum: 130), spacing: 6)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("EFFECTS IN ROTATION")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .tracking(2.0)
+                    .foregroundStyle(Palette.muted)
+                Spacer()
+                Text("\(PsychedelicEffect.allCases.count - viewModel.disabledPsychedelicEffects.count)/\(PsychedelicEffect.allCases.count)")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                    )
+            }
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+                ForEach(PsychedelicEffect.allCases, id: \.key) { effect in
+                    let enabled = !viewModel.disabledPsychedelicEffects.contains(effect.key)
+                    Button {
+                        viewModel.setPsychedelicEffectEnabled(effect.key, enabled: !enabled)
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: enabled ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(enabled ? Color.accentColor : Palette.dim)
+                            Text(effect.displayName)
+                                .font(.system(size: 12))
+                                .foregroundStyle(enabled ? .white : Palette.subtle)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(enabled ? 0.05 : 0.02))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.white.opacity(enabled ? 0.08 : 0.04), lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if viewModel.disabledPsychedelicEffects.count >= PsychedelicEffect.allCases.count {
+                Text("All effects disabled — backdrop will skip the psychedelic layer.")
+                    .font(.system(size: 11))
                     .foregroundStyle(Palette.subtle)
             }
         }
