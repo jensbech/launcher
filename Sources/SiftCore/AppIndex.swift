@@ -10,6 +10,7 @@ public struct AppIndex {
         ].map { URL(fileURLWithPath: $0, isDirectory: true) }
         let home = FileManager.default.homeDirectoryForCurrentUser
         paths.append(home.appendingPathComponent("Applications", isDirectory: true))
+        paths.append(URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app", isDirectory: true))
         return paths
     }()
 
@@ -17,6 +18,13 @@ public struct AppIndex {
         var seen = Set<String>()
         var items: [AppItem] = []
         for dir in directories {
+            if dir.pathExtension == "app" {
+                guard let item = makeItem(at: dir) else { continue }
+                if seen.insert(item.id).inserted {
+                    items.append(item)
+                }
+                continue
+            }
             guard let entries = try? fileManager.contentsOfDirectory(
                 at: dir,
                 includingPropertiesForKeys: nil,

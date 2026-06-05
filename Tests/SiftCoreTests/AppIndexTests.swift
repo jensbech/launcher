@@ -51,6 +51,18 @@ final class AppIndexTests {
         #expect(items == [])
     }
 
+    @Test func scan_acceptsDirectAppBundlePaths() throws {
+        try makeApp(named: "Safari", bundleID: "com.apple.Safari", in: root)
+        let bundle = root.appendingPathComponent("Safari.app")
+        let items = AppIndex.scan(directories: [bundle])
+        #expect(items.map(\.id) == ["com.apple.Safari"])
+    }
+
+    @Test func defaultSearchPaths_includeFinder() {
+        let finder = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app", isDirectory: true)
+        #expect(AppIndex.defaultSearchPaths.contains(finder))
+    }
+
     @Test func makeItem_prefersDisplayNameOverBundleName() throws {
         try makeApp(named: "Bundle Name", bundleID: "com.example.test", in: root, displayName: "Display Name")
         let items = AppIndex.scan(directories: [root])
