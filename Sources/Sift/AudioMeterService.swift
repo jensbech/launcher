@@ -26,15 +26,32 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private var tapID: AudioObjectID = 0
+    private struct TapEntry {
+        let pid: pid_t
+        let audioObjectID: AudioObjectID
+        let tapID: AudioObjectID
+        let tapUID: String
+    }
+
+    private struct BufferSlice {
+        let start: Int
+        let count: Int
+    }
+
+    private var taps: [TapEntry] = []
     private var aggregateID: AudioDeviceID = 0
     private var ioProcID: AudioDeviceIOProcID?
     private var currentOutputUID: String?
 
     private var lock = os_unfair_lock_s()
-    private var atomicRMS: Float = 0
-    private var atomicPeak: Float = 0
+    private var atomicRMSSq: [Float] = []
+    private var atomicSamples: [Int] = []
+    private var atomicPeak: [Float] = []
     private var ioProcCallCount: Int = 0
+
+    private var lastAudibleAt: [pid_t: TimeInterval] = [:]
+    private static let audibilityThreshold: Float = 0.0015
+    private static let audibilityWindowSec: TimeInterval = 0.6
 
     private var refreshTimer: Timer?
     private var sourceTimer: Timer?
@@ -50,7 +67,19 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private var silentTickCount: Int = 0
     private static let silentPauseThreshold: Int = 20
 
-    private init() {
+    private var agcEnvelope: Float = 0.1
+    private static let agcAttack: Float = 0.35
+    private static let agcRelease: Float = 0.004
+    private static let agcFloor: Float = 0.04
+    private static let agcTarget: Float = 0.78
+
+    private var isRunning = false
+
+    private init() {}
+
+    func start() {
+        guard !isRunning else { return }
+        isRunning = true
         if #available(macOS 14.2, *) {
             setupTap()
             observeDefaultDeviceChanges()
@@ -59,6 +88,33 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         }
         scheduleRefresh()
         refreshRunningOutputs()
+    }
+
+    func stop() {
+        guard isRunning else { return }
+        isRunning = false
+        rebuildWorkItem?.cancel()
+        rebuildWorkItem = nil
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        sourceTimer?.invalidate()
+        sourceTimer = nil
+        teardown()
+        currentOutputUID = nil
+        sourceCache = [:]
+        lastAudibleAt = [:]
+        silentTickCount = 0
+        agcEnvelope = 0.1
+        ringBuffer = Array(repeating: 0, count: Self.barCount)
+        ringHead = 0
+        displayBuffer = Array(repeating: 0, count: Self.barCount)
+        let cleared: [Float] = Array(repeating: 0, count: Self.barCount)
+        if bars != cleared { bars = cleared }
+        if level != 0 { level = 0 }
+        if isAvailable { isAvailable = false }
+        if !activeSources.isEmpty { activeSources = [] }
+        if !runningOutputDeviceIDs.isEmpty { runningOutputDeviceIDs = [] }
+        lastError = nil
     }
 
     private func refreshRunningOutputs() {
@@ -92,48 +148,61 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         }
         currentOutputUID = outputUID
 
-        let processes = audioProcessObjectIDs()
-        DebugLog.write("AudioMeter.audioProcesses count=\(processes.count) ids=\(processes)")
-        let desc = CATapDescription(stereoMixdownOfProcesses: processes)
-        desc.uuid = UUID()
-        desc.isPrivate = false
-        desc.isExclusive = false
-        desc.muteBehavior = .unmuted
-        desc.name = "SiftVisualizerTap"
+        let processObjects = audioProcessObjectIDs()
+        DebugLog.write("AudioMeter.audioProcesses count=\(processObjects.count) ids=\(processObjects)")
 
-        var tap: AudioObjectID = 0
-        let tapErr = AudioHardwareCreateProcessTap(desc, &tap)
-        DebugLog.write("AudioMeter.createTap err=\(tapErr) id=\(tap)")
-        guard tapErr == noErr, tap != 0 else {
-            report("tap create failed: OSStatus \(tapErr) (likely missing system-audio recording permission — check System Settings → Privacy & Security → Microphone or System Audio Recording, and grant Sift access)")
+        var newTaps: [TapEntry] = []
+        for obj in processObjects {
+            guard let pid = pidForAudioProcess(obj) else { continue }
+            let desc = CATapDescription(stereoMixdownOfProcesses: [obj])
+            desc.uuid = UUID()
+            desc.isPrivate = false
+            desc.isExclusive = false
+            desc.muteBehavior = .unmuted
+            desc.name = "SiftVisualizerTap.pid\(pid)"
+
+            var tap: AudioObjectID = 0
+            let tapErr = AudioHardwareCreateProcessTap(desc, &tap)
+            guard tapErr == noErr, tap != 0 else {
+                DebugLog.write("AudioMeter.createTap pid=\(pid) err=\(tapErr) skipped")
+                continue
+            }
+            guard let tapUID = readCFStringProperty(tap, kAudioTapPropertyUID) else {
+                DebugLog.write("AudioMeter.tapUIDRead pid=\(pid) failed; destroying tap")
+                AudioHardwareDestroyProcessTap(tap)
+                continue
+            }
+            newTaps.append(TapEntry(pid: pid, audioObjectID: obj, tapID: tap, tapUID: tapUID))
+        }
+
+        guard !newTaps.isEmpty else {
+            report("no audio processes to tap")
             return
         }
-        tapID = tap
-
-        guard let tapUID = readCFStringProperty(tap, kAudioTapPropertyUID) else {
-            report("tap UID read failed")
-            teardown()
-            return
-        }
-        DebugLog.write("AudioMeter.tapUID=\(tapUID)")
+        taps = newTaps
+        atomicRMSSq = [Float](repeating: 0, count: newTaps.count)
+        atomicSamples = [Int](repeating: 0, count: newTaps.count)
+        atomicPeak = [Float](repeating: 0, count: newTaps.count)
+        DebugLog.write("AudioMeter.createdTaps count=\(newTaps.count) pids=\(newTaps.map { $0.pid })")
 
         let aggregateUID = "io.sift.visualizer.\(ProcessInfo.processInfo.processIdentifier).\(UInt64.random(in: 0..<UInt64.max))"
+        let subTapList: [[String: Any]] = newTaps.map { entry in
+            [
+                kAudioSubTapUIDKey: entry.tapUID,
+                kAudioSubTapDriftCompensationKey: 1
+            ] as [String: Any]
+        }
         let aggregateDict: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Sift Aggregate",
             kAudioAggregateDeviceUIDKey: aggregateUID,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: 0,
             kAudioAggregateDeviceIsStackedKey: 0,
-            kAudioAggregateDeviceTapListKey: [
-                [
-                    kAudioSubTapUIDKey: tapUID,
-                    kAudioSubTapDriftCompensationKey: 1
-                ] as [String: Any]
-            ]
+            kAudioAggregateDeviceTapListKey: subTapList
         ]
         var agg: AudioDeviceID = 0
         let aggErr = AudioHardwareCreateAggregateDevice(aggregateDict as CFDictionary, &agg)
-        DebugLog.write("AudioMeter.createAggregate err=\(aggErr) id=\(agg) outputUID=\(outputUID)")
+        DebugLog.write("AudioMeter.createAggregate err=\(aggErr) id=\(agg) outputUID=\(outputUID) tapCount=\(newTaps.count)")
         guard aggErr == noErr, agg != 0 else {
             report("aggregate create failed: OSStatus \(aggErr)")
             teardown()
@@ -141,9 +210,12 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         }
         aggregateID = agg
 
+        let slices = computeBufferSlices(device: agg, expectedStreamCount: newTaps.count)
+        DebugLog.write("AudioMeter.bufferSlices \(slices.map { "[\($0.start),\($0.count)]" }.joined(separator: ","))")
+
         var procID: AudioDeviceIOProcID?
         let installErr = AudioDeviceCreateIOProcIDWithBlock(&procID, agg, nil) { [weak self] _, inputData, _, _, _ in
-            self?.process(inputData)
+            self?.process(inputData, slices: slices)
         }
         DebugLog.write("AudioMeter.installIOProc err=\(installErr)")
         guard installErr == noErr, let procID else {
@@ -164,6 +236,46 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             self?.isAvailable = true
             self?.lastError = nil
         }
+    }
+
+    private func computeBufferSlices(device: AudioDeviceID, expectedStreamCount: Int) -> [BufferSlice] {
+        var streamAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var streamsSize: UInt32 = 0
+        AudioObjectGetPropertyDataSize(device, &streamAddr, 0, nil, &streamsSize)
+        let streamCount = Int(streamsSize) / MemoryLayout<AudioStreamID>.size
+        guard streamCount > 0 else { return [] }
+        var streams = [AudioStreamID](repeating: 0, count: streamCount)
+        AudioObjectGetPropertyData(device, &streamAddr, 0, nil, &streamsSize, &streams)
+
+        var perStreamBufferCount: [Int] = []
+        for sid in streams {
+            var fmt = AudioStreamBasicDescription()
+            var fmtSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+            var fmtAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioStreamPropertyVirtualFormat,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectGetPropertyData(sid, &fmtAddr, 0, nil, &fmtSize, &fmt)
+            let isNonInterleaved = (fmt.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+            let bufCount = isNonInterleaved ? max(1, Int(fmt.mChannelsPerFrame)) : 1
+            perStreamBufferCount.append(bufCount)
+        }
+        if perStreamBufferCount.count != expectedStreamCount {
+            DebugLog.write("AudioMeter.bufferSliceWarn expected=\(expectedStreamCount) actualStreams=\(perStreamBufferCount.count)")
+        }
+        var slices: [BufferSlice] = []
+        var cursor = 0
+        for i in 0..<expectedStreamCount {
+            let c = i < perStreamBufferCount.count ? perStreamBufferCount[i] : 1
+            slices.append(BufferSlice(start: cursor, count: c))
+            cursor += c
+        }
+        return slices
     }
 
     private func logStreamFormats(_ device: AudioDeviceID) {
@@ -202,28 +314,40 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in self?.lastError = msg }
     }
 
-    private func process(_ inputData: UnsafePointer<AudioBufferList>) {
+    private func process(_ inputData: UnsafePointer<AudioBufferList>, slices: [BufferSlice]) {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
-        var sumSquares: Float = 0
-        var count: vDSP_Length = 0
-        var peak: Float = 0
-        for buffer in buffers {
-            guard let data = buffer.mData else { continue }
-            let floatCount = vDSP_Length(buffer.mDataByteSize) / vDSP_Length(MemoryLayout<Float32>.size)
-            guard floatCount > 0 else { continue }
-            let ptr = data.assumingMemoryBound(to: Float32.self)
-            var bufSumSq: Float = 0
-            vDSP_measqv(ptr, 1, &bufSumSq, floatCount)
-            sumSquares += bufSumSq * Float(floatCount)
-            var bufPeak: Float = 0
-            vDSP_maxmgv(ptr, 1, &bufPeak, floatCount)
-            if bufPeak > peak { peak = bufPeak }
-            count += floatCount
+        let totalBuffers = buffers.count
+
+        var localSumSq = [Float](repeating: 0, count: slices.count)
+        var localSamples = [Int](repeating: 0, count: slices.count)
+        var localPeak = [Float](repeating: 0, count: slices.count)
+
+        for (i, slice) in slices.enumerated() {
+            for j in 0..<slice.count {
+                let idx = slice.start + j
+                guard idx < totalBuffers else { break }
+                let buffer = buffers[idx]
+                guard let data = buffer.mData else { continue }
+                let floatCount = vDSP_Length(buffer.mDataByteSize) / vDSP_Length(MemoryLayout<Float32>.size)
+                guard floatCount > 0 else { continue }
+                let ptr = data.assumingMemoryBound(to: Float32.self)
+                var bufSumSq: Float = 0
+                vDSP_measqv(ptr, 1, &bufSumSq, floatCount)
+                localSumSq[i] += bufSumSq * Float(floatCount)
+                var bufPeak: Float = 0
+                vDSP_maxmgv(ptr, 1, &bufPeak, floatCount)
+                if bufPeak > localPeak[i] { localPeak[i] = bufPeak }
+                localSamples[i] += Int(floatCount)
+            }
         }
-        let rms = count > 0 ? sqrtf(sumSquares / Float(count)) : 0
+
         os_unfair_lock_lock(&lock)
-        atomicRMS = max(atomicRMS, rms)
-        atomicPeak = max(atomicPeak, peak)
+        let upper = min(slices.count, atomicRMSSq.count)
+        for i in 0..<upper {
+            atomicRMSSq[i] += localSumSq[i]
+            atomicSamples[i] += localSamples[i]
+            if localPeak[i] > atomicPeak[i] { atomicPeak[i] = localPeak[i] }
+        }
         ioProcCallCount &+= 1
         os_unfair_lock_unlock(&lock)
     }
@@ -239,23 +363,50 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
 
     private func tick() {
         os_unfair_lock_lock(&lock)
-        let rms = atomicRMS
-        let peak = atomicPeak
+        let sumSqs = atomicRMSSq
+        let samples = atomicSamples
+        let peaks = atomicPeak
         let calls = ioProcCallCount
         ioProcCallCount = 0
-        atomicRMS = 0
-        atomicPeak = 0
+        for i in 0..<atomicRMSSq.count {
+            atomicRMSSq[i] = 0
+            atomicSamples[i] = 0
+            atomicPeak[i] = 0
+        }
+        let tapsSnapshot = taps
         os_unfair_lock_unlock(&lock)
 
         _ = calls
 
-        let hasSignal = rms != 0 || peak != 0
+        let now = CACurrentMediaTime()
+        var mixRMS: Float = 0
+        var mixPeak: Float = 0
+        let limit = min(tapsSnapshot.count, sumSqs.count)
+        for i in 0..<limit {
+            let n = samples[i]
+            let rmsI = n > 0 ? sqrtf(sumSqs[i] / Float(n)) : 0
+            let peakI = peaks[i]
+            if peakI >= Self.audibilityThreshold || rmsI >= Self.audibilityThreshold * 0.5 {
+                lastAudibleAt[tapsSnapshot[i].pid] = now
+            }
+            mixRMS = max(mixRMS, rmsI)
+            mixPeak = max(mixPeak, peakI)
+        }
+
+        refreshAudibleSources(now: now)
+        let hasSignal = mixRMS != 0 || mixPeak != 0
         if !hasSignal && level == 0 && silentTickCount >= Self.silentPauseThreshold {
             return
         }
 
-        let raw = min(1.0, max(rms * 3.0, peak * 0.7))
-        let smoothed = level * 0.55 + raw * 0.45
+        let combined = max(mixRMS * 2.5, mixPeak)
+        let coeff: Float = combined > agcEnvelope ? Self.agcAttack : Self.agcRelease
+        agcEnvelope += (combined - agcEnvelope) * coeff
+        let denom = max(agcEnvelope, Self.agcFloor)
+        let raw = min(1.0, max(0.0, (combined / denom) * Self.agcTarget))
+        let smoothed = raw > level
+            ? level * 0.35 + raw * 0.65
+            : level * 0.7 + raw * 0.3
 
         ringBuffer[ringHead] = smoothed
         ringHead = (ringHead + 1) % Self.barCount
@@ -289,10 +440,17 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             AudioHardwareDestroyAggregateDevice(aggregateID)
             aggregateID = 0
         }
-        if #available(macOS 14.2, *), tapID != 0 {
-            AudioHardwareDestroyProcessTap(tapID)
-            tapID = 0
+        if #available(macOS 14.2, *) {
+            for entry in taps where entry.tapID != 0 {
+                AudioHardwareDestroyProcessTap(entry.tapID)
+            }
         }
+        os_unfair_lock_lock(&lock)
+        taps = []
+        atomicRMSSq = []
+        atomicSamples = []
+        atomicPeak = []
+        os_unfair_lock_unlock(&lock)
     }
 
     @available(macOS 14.2, *)
@@ -309,16 +467,18 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             &addr,
             DispatchQueue.main
         ) { [weak self] _, _ in
-            self?.scheduleRebuild()
-            self?.refreshRunningOutputs()
-            self?.refreshSources()
+            guard let self, self.isRunning else { return }
+            self.scheduleRebuild()
+            self.refreshRunningOutputs()
+            self.refreshSources()
         }
     }
 
     private func scheduleRebuild() {
+        guard isRunning else { return }
         rebuildWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self, self.isRunning else { return }
             if #available(macOS 14.2, *) { self.setupTap() }
         }
         rebuildWorkItem = item
@@ -339,7 +499,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             &addr,
             DispatchQueue.main
         ) { [weak self] _, _ in
-            guard let self else { return }
+            guard let self, self.isRunning else { return }
             let newUID = self.defaultOutputUID()
             if newUID != self.currentOutputUID {
                 self.setupTap()
@@ -376,12 +536,21 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     @available(macOS 14.2, *)
     private func refreshSources() {
         let processes = audioProcessObjectIDs()
-        var collected: [SourceApp] = []
-        var seenPIDs: Set<pid_t> = []
+        var livePIDs: Set<pid_t> = []
         for obj in processes {
-            guard isProcessRunningOutput(obj) else { continue }
-            guard let pid = pidForAudioProcess(obj) else { continue }
-            seenPIDs.insert(pid)
+            if let pid = pidForAudioProcess(obj) { livePIDs.insert(pid) }
+        }
+        sourceCache = sourceCache.filter { livePIDs.contains($0.key) }
+        lastAudibleAt = lastAudibleAt.filter { livePIDs.contains($0.key) }
+        refreshRunningOutputs()
+        _ = refreshAudibleSources(now: CACurrentMediaTime())
+    }
+
+    @discardableResult
+    private func refreshAudibleSources(now: TimeInterval) -> Bool {
+        let cutoff = now - Self.audibilityWindowSec
+        var collected: [SourceApp] = []
+        for (pid, ts) in lastAudibleAt where ts >= cutoff {
             let source: SourceApp
             if let cached = sourceCache[pid] {
                 source = cached
@@ -396,23 +565,12 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
                 collected.append(source)
             }
         }
-        sourceCache = sourceCache.filter { seenPIDs.contains($0.key) }
+        collected.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         if collected != activeSources {
             activeSources = collected
+            return true
         }
-        refreshRunningOutputs()
-    }
-
-    private func isProcessRunningOutput(_ id: AudioObjectID) -> Bool {
-        var addr = AudioObjectPropertyAddress(
-            mSelector: AudioObjectPropertySelector(kAudioProcessPropertyIsRunningOutput),
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var running: UInt32 = 0
-        var size = UInt32(MemoryLayout<UInt32>.size)
-        let err = AudioObjectGetPropertyData(id, &addr, 0, nil, &size, &running)
-        return err == noErr && running != 0
+        return false
     }
 
     private func pidForAudioProcess(_ id: AudioObjectID) -> pid_t? {

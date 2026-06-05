@@ -25,7 +25,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var combinedSearch: Bool = false
     @Published var devicesEnabled: Bool = false
     @Published var statusStripEnabled: Bool = false
-    @Published var hideStripWhenBuiltInOnly: Bool = true
     @Published var audioSwitcherEnabled: Bool = true
     @Published var disabledDeviceIDs: Set<String> = []
     @Published var pairedDevices: [DeviceItem] = []
@@ -37,17 +36,20 @@ final class SettingsViewModel: ObservableObject {
     private let bookmarkStore: BookmarkStore
     private let onHotkeysChanged: () -> Void
     private let onSleepConfigChanged: () -> Void
+    private let onStatusStripConfigChanged: (Bool) -> Void
 
     init(
         store: Store,
         bookmarkStore: BookmarkStore = BookmarkStore(),
         onHotkeysChanged: @escaping () -> Void = {},
-        onSleepConfigChanged: @escaping () -> Void = {}
+        onSleepConfigChanged: @escaping () -> Void = {},
+        onStatusStripConfigChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.store = store
         self.bookmarkStore = bookmarkStore
         self.onHotkeysChanged = onHotkeysChanged
         self.onSleepConfigChanged = onSleepConfigChanged
+        self.onStatusStripConfigChanged = onStatusStripConfigChanged
         let config = store.load()
         self.disabled = config.disabledBundleIDs
         self.launchAtLogin = config.launchAtLogin
@@ -66,7 +68,6 @@ final class SettingsViewModel: ObservableObject {
         self.combinedSearch = config.combinedSearch
         self.devicesEnabled = config.devicesEnabled
         self.statusStripEnabled = config.statusStripEnabled
-        self.hideStripWhenBuiltInOnly = config.hideStripWhenBuiltInOnly
         self.audioSwitcherEnabled = config.audioSwitcherEnabled
         self.disabledDeviceIDs = config.disabledDeviceIDs
         self.sleepCommandsEnabled = config.sleepCommandsEnabled
@@ -97,11 +98,7 @@ final class SettingsViewModel: ObservableObject {
     func setStatusStripEnabled(_ value: Bool) {
         statusStripEnabled = value
         persist()
-    }
-
-    func setHideStripWhenBuiltInOnly(_ value: Bool) {
-        hideStripWhenBuiltInOnly = value
-        persist()
+        onStatusStripConfigChanged(value)
     }
 
     func setSleepCommandsEnabled(_ value: Bool) {
@@ -301,7 +298,6 @@ final class SettingsViewModel: ObservableObject {
             devicesEnabled: devicesEnabled,
             audioSwitcherEnabled: audioSwitcherEnabled,
             statusStripEnabled: statusStripEnabled,
-            hideStripWhenBuiltInOnly: hideStripWhenBuiltInOnly,
             disabledDeviceIDs: disabledDeviceIDs,
             sleepCommandsEnabled: sleepCommandsEnabled,
             screenshotEnabled: screenshotEnabled
@@ -1498,21 +1494,6 @@ private struct DevicesPane: View {
                             set: { viewModel.setStatusStripEnabled($0) }
                         )
                     )
-
-                    Rectangle()
-                        .fill(Palette.hairline)
-                        .frame(height: 1)
-
-                    ToggleRow(
-                        title: "Hide when built-in speakers are playing",
-                        description: "Stay hidden even when audio is playing, if it's playing through the MacBook's own speakers. Only surface for external outputs (AirPods, AirPlay, headphones, etc).",
-                        isOn: Binding(
-                            get: { viewModel.hideStripWhenBuiltInOnly },
-                            set: { viewModel.setHideStripWhenBuiltInOnly($0) }
-                        )
-                    )
-                    .opacity(viewModel.statusStripEnabled ? 1 : 0.5)
-                    .disabled(!viewModel.statusStripEnabled)
                 }
             }
 

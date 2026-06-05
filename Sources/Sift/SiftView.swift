@@ -147,7 +147,6 @@ final class SiftViewModel: ObservableObject {
     @Published var visibleStatusDevices: [DeviceItem] = []
     @Published var devicesEnabled: Bool = false
     @Published var statusStripEnabled: Bool = false
-    @Published var hideStripWhenBuiltInOnly: Bool = true
     @Published var sleepCommandsEnabled: Bool = false
     @Published var sleepDisabled: Bool = false
     @Published var combinedSearch: Bool = false
@@ -231,7 +230,6 @@ final class SiftViewModel: ObservableObject {
         disabledDeviceIDs = config.disabledDeviceIDs
         devicesEnabled = config.devicesEnabled
         statusStripEnabled = config.statusStripEnabled
-        hideStripWhenBuiltInOnly = config.hideStripWhenBuiltInOnly
         audioSwitcherEnabled = config.audioSwitcherEnabled
         sleepCommandsEnabled = config.sleepCommandsEnabled
         screenshotEnabled = config.screenshotEnabled
@@ -314,14 +312,7 @@ final class SiftViewModel: ObservableObject {
         let playing = statusDevices.filter { device in
             device.kind == .audioOutput && runningIDs.contains(device.id)
         }
-        let next: [DeviceItem]
-        if playing.isEmpty {
-            next = []
-        } else if hideStripWhenBuiltInOnly {
-            next = playing.contains { $0.category != .builtIn } ? playing : []
-        } else {
-            next = playing
-        }
+        let next: [DeviceItem] = playing
         if next != visibleStatusDevices { visibleStatusDevices = next }
     }
 
@@ -844,13 +835,7 @@ private struct DeviceStatusStrip: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 7) {
-                AudioVisualizer()
-                Text("PLAYING")
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                    .tracking(1.8)
-                    .foregroundStyle(.white.opacity(0.5))
-            }
+            AudioVisualizer()
             ForEach(devices) { device in
                 HStack(spacing: 7) {
                     Image(systemName: device.category.systemImageName)

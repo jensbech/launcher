@@ -27,7 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: store,
             bookmarkStore: bookmarkStore,
             onHotkeysChanged: { [weak self] in self?.rebindHotkeys() },
-            onSleepConfigChanged: { [weak self] in self?.menuBar.refreshTint() }
+            onSleepConfigChanged: { [weak self] in self?.menuBar.refreshTint() },
+            onStatusStripConfigChanged: { enabled in
+                if enabled { AudioMeterService.shared.start() } else { AudioMeterService.shared.stop() }
+            }
         )
         menuBar = MenuBarController(
             store: store,
@@ -37,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys = HotkeyManager()
         rebindHotkeys()
         SleepService.shared.startWatching()
+        if store.load().statusStripEnabled {
+            AudioMeterService.shared.start()
+        }
         showFirstRunHintIfNeeded()
     }
 

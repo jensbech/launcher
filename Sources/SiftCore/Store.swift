@@ -147,7 +147,6 @@ public struct Config: Codable, Equatable {
     public var devicesEnabled: Bool
     public var audioSwitcherEnabled: Bool
     public var statusStripEnabled: Bool
-    public var hideStripWhenBuiltInOnly: Bool
     public var disabledDeviceIDs: Set<String>
     public var sleepCommandsEnabled: Bool
     public var screenshotEnabled: Bool
@@ -173,7 +172,6 @@ public struct Config: Codable, Equatable {
         devicesEnabled: Bool = false,
         audioSwitcherEnabled: Bool = true,
         statusStripEnabled: Bool = false,
-        hideStripWhenBuiltInOnly: Bool = true,
         disabledDeviceIDs: Set<String> = [],
         sleepCommandsEnabled: Bool = false,
         screenshotEnabled: Bool = false
@@ -195,7 +193,6 @@ public struct Config: Codable, Equatable {
         self.devicesEnabled = devicesEnabled
         self.audioSwitcherEnabled = audioSwitcherEnabled
         self.statusStripEnabled = statusStripEnabled
-        self.hideStripWhenBuiltInOnly = hideStripWhenBuiltInOnly
         self.disabledDeviceIDs = disabledDeviceIDs
         self.sleepCommandsEnabled = sleepCommandsEnabled
         self.screenshotEnabled = screenshotEnabled
@@ -219,7 +216,6 @@ public struct Config: Codable, Equatable {
         case devicesEnabled
         case audioSwitcherEnabled
         case statusStripEnabled
-        case hideStripWhenBuiltInOnly
         case disabledDeviceIDs
         case sleepCommandsEnabled
         case screenshotEnabled
@@ -246,7 +242,6 @@ public struct Config: Codable, Equatable {
         self.devicesEnabled = try container.decodeIfPresent(Bool.self, forKey: .devicesEnabled) ?? false
         self.audioSwitcherEnabled = try container.decodeIfPresent(Bool.self, forKey: .audioSwitcherEnabled) ?? true
         self.statusStripEnabled = try container.decodeIfPresent(Bool.self, forKey: .statusStripEnabled) ?? false
-        self.hideStripWhenBuiltInOnly = try container.decodeIfPresent(Bool.self, forKey: .hideStripWhenBuiltInOnly) ?? true
         self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
         self.sleepCommandsEnabled = try container.decodeIfPresent(Bool.self, forKey: .sleepCommandsEnabled) ?? false
         self.screenshotEnabled = try container.decodeIfPresent(Bool.self, forKey: .screenshotEnabled) ?? false

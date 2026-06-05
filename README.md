@@ -135,7 +135,7 @@ The settings window is organized as a sidebar with numbered sections:
 
 1. **Apps** — fuzzy filter the full app list, toggle which are searchable.
 2. **Bookmarks** — Zen browser import toggle + custom bookmarks (name + URL). Combined search toggle (apps + bookmarks in the launcher panel).
-3. **Devices** — now-playing strip toggle (with "hide when built-in speakers are playing" sub-toggle), search toggle (with audio-outputs sub-toggle), per-paired-BT-device opt-in list.
+3. **Devices** — now-playing strip toggle, search toggle (with audio-outputs sub-toggle), per-paired-BT-device opt-in list.
 4. **Position** — 7×7 grid picker with a live mini-preview of the panel anchor.
 5. **Shortcuts** — key recorder for launcher and bookmarks hotkeys, plus Reset to Defaults.
 6. **General** — Launch at login, Sleep (with sudoers status + copyable install commands), Screenshot region toggle, Backdrop (blur/dim with intensity slider, Psychedelic toggle with its own intensity slider).
