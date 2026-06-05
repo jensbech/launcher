@@ -116,11 +116,12 @@ private func psychedelicCanvas<Content: View>(
     intensity: Double,
     @ViewBuilder content: @escaping (TimelineViewDefaultContext) -> Content
 ) -> some View {
-    if intensity >= 0.5 {
-        TimelineView(.animation) { ctx in content(ctx) }
-    } else {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { ctx in content(ctx) }
-    }
+    let interval = intensity >= 0.5 ? 1.0 / 60.0 : 1.0 / 30.0
+    TimelineView(.periodic(from: .now, by: interval)) { ctx in content(ctx) }
+}
+
+private func scaledCount(_ base: Int, intensity: Double) -> Int {
+    max(1, Int((Double(base) * (0.35 + 0.65 * intensity)).rounded()))
 }
 
 private struct WavesEffect: View {
@@ -133,7 +134,7 @@ private struct WavesEffect: View {
                 ZStack {
                     Color.black.opacity(0.30)
                     Canvas { c, _ in
-                        let count = 14
+                        let count = scaledCount(14, intensity: intensity)
                         for i in 0..<count {
                             var path = Path()
                             let baseY = (Double(i) + 0.5) / Double(count) * size.height
@@ -158,7 +159,7 @@ private struct WavesEffect: View {
                     .blendMode(.plusLighter)
 
                     Canvas { c, _ in
-                        let count = 22
+                        let count = scaledCount(22, intensity: intensity)
                         for i in 0..<count {
                             var path = Path()
                             let baseX = (Double(i) + 0.5) / Double(count) * size.width
@@ -295,7 +296,7 @@ private struct StarfieldEffect: View {
                         let cx = size.width / 2
                         let cy = size.height / 2
                         let maxR = hypot(size.width, size.height) / 2
-                        let starCount = 240
+                        let starCount = scaledCount(240, intensity: intensity)
                         var rng = SeededRNG(seed: 17)
                         for _ in 0..<starCount {
                             let angle = rng.nextUnit() * 2 * .pi
@@ -590,7 +591,7 @@ private struct CRTEffect: View {
 
                     Canvas { c, _ in
                         var rng = SeededRNG(seed: UInt64(t * 40))
-                        let count = Int(size.width * size.height / 700)
+                        let count = scaledCount(Int(size.width * size.height / 700), intensity: intensity)
                         for _ in 0..<count {
                             let x = rng.nextUnit() * size.width
                             let y = rng.nextUnit() * size.height
@@ -680,7 +681,7 @@ private struct ConfettiEffect: View {
                 ZStack {
                     Color.black.opacity(0.65)
                     Canvas { c, _ in
-                        let count = 180
+                        let count = scaledCount(180, intensity: intensity)
                         for i in 0..<count {
                             var rng = SeededRNG(seed: UInt64(i) &* 23 &+ 5)
                             let xBase = rng.nextUnit() * size.width
@@ -722,7 +723,7 @@ private struct GridFloorEffect: View {
                         startPoint: .top, endPoint: .bottom
                     )
                     Canvas { c, _ in
-                        let lineCount = 22
+                        let lineCount = scaledCount(22, intensity: intensity)
                         let scroll = t * 0.4
                         for i in 0..<lineCount {
                             let progress = (Double(i) / Double(lineCount) + scroll).truncatingRemainder(dividingBy: 1)
@@ -785,7 +786,7 @@ private struct PhyllotaxisEffect: View {
                 ZStack {
                     Color.black.opacity(0.55)
                     Canvas { c, _ in
-                        let n = 380
+                        let n = scaledCount(380, intensity: intensity)
                         let breath = 0.85 + 0.18 * sin(t * 0.45)
                         for i in 0..<n {
                             let a = Double(i) * goldenAngle + t * 0.22
@@ -817,7 +818,7 @@ private struct PixelSortEffect: View {
                 ZStack {
                     Color.black.opacity(0.5)
                     Canvas { c, _ in
-                        let bandCount = 42
+                        let bandCount = scaledCount(42, intensity: intensity)
                         let bandH = size.height / Double(bandCount)
                         for i in 0..<bandCount {
                             var rng = SeededRNG(seed: UInt64(i) &* 31 &+ 11)
@@ -855,7 +856,7 @@ private struct FirefliesEffect: View {
                 ZStack {
                     Color.black.opacity(0.78)
                     Canvas { c, _ in
-                        let count = 120
+                        let count = scaledCount(120, intensity: intensity)
                         for i in 0..<count {
                             var rng = SeededRNG(seed: UInt64(i) &* 19 &+ 7)
                             let speed = 0.25 + rng.nextUnit() * 0.45
@@ -899,7 +900,7 @@ private struct SunburstEffect: View {
                 ZStack {
                     Color.black.opacity(0.55)
                     Canvas { c, _ in
-                        let rays = 64
+                        let rays = scaledCount(64, intensity: intensity)
                         let pulse = 0.7 + 0.3 * sin(t * 1.4)
                         for i in 0..<rays {
                             let angle = Double(i) / Double(rays) * 2 * .pi + t * 0.3
@@ -985,7 +986,7 @@ private struct BouncingBallsEffect: View {
                 ZStack {
                     Color.black.opacity(0.55)
                     Canvas { c, _ in
-                        let ballCount = 24
+                        let ballCount = scaledCount(24, intensity: intensity)
                         for i in 0..<ballCount {
                             var rng = SeededRNG(seed: UInt64(i) &* 41 &+ 3)
                             let vx = (rng.nextUnit() - 0.5) * 320

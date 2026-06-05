@@ -40,7 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys = HotkeyManager()
         rebindHotkeys()
         SleepService.shared.startWatching()
-        if store.load().statusStripEnabled {
+        let initialStripEnabled = store.load().statusStripEnabled
+        DebugLog.write("AppDelegate.statusStripEnabled=\(initialStripEnabled)")
+        if initialStripEnabled {
             AudioMeterService.shared.start()
         }
         showFirstRunHintIfNeeded()

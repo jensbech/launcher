@@ -78,7 +78,8 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private init() {}
 
     func start() {
-        guard !isRunning else { return }
+        guard !isRunning else { DebugLog.write("AudioMeter.start ignored (already running)"); return }
+        DebugLog.write("AudioMeter.start")
         isRunning = true
         if #available(macOS 14.2, *) {
             setupTap()
@@ -91,7 +92,8 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     }
 
     func stop() {
-        guard isRunning else { return }
+        guard isRunning else { DebugLog.write("AudioMeter.stop ignored (not running)"); return }
+        DebugLog.write("AudioMeter.stop tapsBeforeTeardown=\(taps.count) aggregateID=\(aggregateID)")
         isRunning = false
         rebuildWorkItem?.cancel()
         rebuildWorkItem = nil
