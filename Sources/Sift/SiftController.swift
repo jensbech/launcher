@@ -77,7 +77,10 @@ final class SiftController {
 
     private func launch(_ item: AppItem) {
         hide()
-        NSWorkspace.shared.open(item.url)
+        let url = item.url
+        DispatchQueue.global(qos: .userInitiated).async {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func makePanel() -> SiftPanel {

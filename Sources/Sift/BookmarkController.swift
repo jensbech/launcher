@@ -53,7 +53,9 @@ final class BookmarkController {
     private func openURL(_ urlString: String) {
         hide()
         guard let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
+        DispatchQueue.global(qos: .userInitiated).async {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func makePanel() -> SiftPanel {

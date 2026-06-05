@@ -607,7 +607,8 @@ final class SiftViewModel: ObservableObject {
     }
 
     private func openURL(_ urlString: String) {
-        if let url = URL(string: urlString) {
+        guard let url = URL(string: urlString) else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
             NSWorkspace.shared.open(url)
         }
     }
