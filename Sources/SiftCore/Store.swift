@@ -140,6 +140,7 @@ public struct Config: Codable, Equatable {
     public var psychedelicIntensity: Double
     public var disabledPsychedelicEffects: Set<String>
     public var includeZenBookmarks: Bool
+    public var includeFirefoxBookmarks: Bool
     public var launcherHotkey: Hotkey
     public var bookmarksHotkey: Hotkey
     public var combinedSearch: Bool
@@ -165,6 +166,7 @@ public struct Config: Codable, Equatable {
         psychedelicIntensity: Double = Config.defaultPsychedelicIntensity,
         disabledPsychedelicEffects: Set<String> = [],
         includeZenBookmarks: Bool = true,
+        includeFirefoxBookmarks: Bool = false,
         launcherHotkey: Hotkey = .defaultLauncher,
         bookmarksHotkey: Hotkey = .defaultBookmarks,
         combinedSearch: Bool = false,
@@ -186,6 +188,7 @@ public struct Config: Codable, Equatable {
         self.psychedelicIntensity = max(0, min(1, psychedelicIntensity))
         self.disabledPsychedelicEffects = disabledPsychedelicEffects
         self.includeZenBookmarks = includeZenBookmarks
+        self.includeFirefoxBookmarks = includeFirefoxBookmarks
         self.launcherHotkey = launcherHotkey
         self.bookmarksHotkey = bookmarksHotkey
         self.combinedSearch = combinedSearch
@@ -209,6 +212,7 @@ public struct Config: Codable, Equatable {
         case psychedelicIntensity
         case disabledPsychedelicEffects
         case includeZenBookmarks
+        case includeFirefoxBookmarks
         case launcherHotkey
         case bookmarksHotkey
         case combinedSearch
@@ -235,6 +239,7 @@ public struct Config: Codable, Equatable {
         self.psychedelicIntensity = max(0, min(1, rawPsych))
         self.disabledPsychedelicEffects = try container.decodeIfPresent(Set<String>.self, forKey: .disabledPsychedelicEffects) ?? []
         self.includeZenBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeZenBookmarks) ?? true
+        self.includeFirefoxBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeFirefoxBookmarks) ?? false
         self.launcherHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .launcherHotkey) ?? .defaultLauncher
         self.bookmarksHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .bookmarksHotkey) ?? .defaultBookmarks
         self.combinedSearch = try container.decodeIfPresent(Bool.self, forKey: .combinedSearch) ?? false

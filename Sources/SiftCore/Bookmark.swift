@@ -9,6 +9,7 @@ public struct Bookmark: Identifiable, Equatable, Hashable, Codable, Sendable {
     public enum Source: String, Codable, Sendable {
         case managed
         case zen
+        case firefox
     }
 
     public init(id: String = UUID().uuidString, name: String, url: String, source: Source = .managed) {

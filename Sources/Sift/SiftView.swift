@@ -172,6 +172,8 @@ final class SiftViewModel: ObservableObject {
     private var bookmarks: [Bookmark] = []
     private var cachedZenBookmarks: [Bookmark] = []
     private var lastZenMTime: Date?
+    private var cachedFirefoxBookmarks: [Bookmark] = []
+    private var lastFirefoxMTime: Date?
 
     init(store: Store, usageStore: UsageStore = UsageStore(), bookmarkStore: BookmarkStore = BookmarkStore()) {
         self.store = store
@@ -272,7 +274,22 @@ final class SiftViewModel: ObservableObject {
             cachedZenBookmarks = []
             lastZenMTime = nil
         }
-        bookmarks = BookmarkIndex.merged(managed: managed, imported: zen)
+        let firefox: [Bookmark]
+        if config.includeFirefoxBookmarks {
+            let currentMTime = FirefoxBookmarkImporter.modificationTime()
+            if let mtime = currentMTime, mtime == lastFirefoxMTime, !cachedFirefoxBookmarks.isEmpty {
+                firefox = cachedFirefoxBookmarks
+            } else {
+                firefox = FirefoxBookmarkImporter.load()
+                cachedFirefoxBookmarks = firefox
+                lastFirefoxMTime = currentMTime
+            }
+        } else {
+            firefox = []
+            cachedFirefoxBookmarks = []
+            lastFirefoxMTime = nil
+        }
+        bookmarks = BookmarkIndex.merged(managed: managed, imported: zen + firefox)
         FaviconCache.shared.prefetch(bookmarks: bookmarks)
     }
 

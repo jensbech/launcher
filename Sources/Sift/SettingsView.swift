@@ -18,6 +18,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var psychedelicIntensity: Double = Config.defaultPsychedelicIntensity
     @Published var disabledPsychedelicEffects: Set<String> = []
     @Published var includeZenBookmarks: Bool = true
+    @Published var includeFirefoxBookmarks: Bool = false
     @Published var managedBookmarks: [Bookmark] = []
     @Published var launcherHotkey: Hotkey = .defaultLauncher
     @Published var bookmarksHotkey: Hotkey = .defaultBookmarks
@@ -59,6 +60,7 @@ final class SettingsViewModel: ObservableObject {
         self.psychedelicIntensity = config.psychedelicIntensity
         self.disabledPsychedelicEffects = config.disabledPsychedelicEffects
         self.includeZenBookmarks = config.includeZenBookmarks
+        self.includeFirefoxBookmarks = config.includeFirefoxBookmarks
         self.launcherHotkey = config.launcherHotkey
         self.bookmarksHotkey = config.bookmarksHotkey
         self.combinedSearch = config.combinedSearch
@@ -236,6 +238,11 @@ final class SettingsViewModel: ObservableObject {
         persist()
     }
 
+    func setIncludeFirefoxBookmarks(_ value: Bool) {
+        includeFirefoxBookmarks = value
+        persist()
+    }
+
     func setLauncherHotkey(_ value: Hotkey) {
         launcherHotkey = value
         persist()
@@ -287,6 +294,7 @@ final class SettingsViewModel: ObservableObject {
             psychedelicIntensity: psychedelicIntensity,
             disabledPsychedelicEffects: disabledPsychedelicEffects,
             includeZenBookmarks: includeZenBookmarks,
+            includeFirefoxBookmarks: includeFirefoxBookmarks,
             launcherHotkey: launcherHotkey,
             bookmarksHotkey: bookmarksHotkey,
             combinedSearch: combinedSearch,
@@ -753,14 +761,24 @@ private struct BookmarksPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Card(title: "BROWSER") {
-                ToggleRow(
-                    title: "Include Zen bookmarks",
-                    description: "Imports bookmarks from your Zen browser profile and merges them with the list below. Open with ⇧⌘Space.",
-                    isOn: Binding(
-                        get: { viewModel.includeZenBookmarks },
-                        set: { viewModel.setIncludeZenBookmarks($0) }
+                VStack(spacing: 12) {
+                    ToggleRow(
+                        title: "Include Zen bookmarks",
+                        description: "Imports bookmarks from your Zen browser profile and merges them with the list below. Open with ⇧⌘Space.",
+                        isOn: Binding(
+                            get: { viewModel.includeZenBookmarks },
+                            set: { viewModel.setIncludeZenBookmarks($0) }
+                        )
                     )
-                )
+                    ToggleRow(
+                        title: "Include Firefox bookmarks",
+                        description: "Imports bookmarks from your Firefox profile (~/Library/Application Support/Firefox/Profiles/). Picks the most recently used profile.",
+                        isOn: Binding(
+                            get: { viewModel.includeFirefoxBookmarks },
+                            set: { viewModel.setIncludeFirefoxBookmarks($0) }
+                        )
+                    )
+                }
             }
 
             Card(title: "CUSTOM", caption: "\(viewModel.managedBookmarks.count) saved") {

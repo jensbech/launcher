@@ -74,6 +74,8 @@ final class BookmarkViewModel: ObservableObject {
     private var allBookmarks: [Bookmark] = []
     private var lastZenMTime: Date?
     private var hasLoadedZen = false
+    private var lastFirefoxMTime: Date?
+    private var hasLoadedFirefox = false
     private var refreshing = false
 
     init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore()) {
@@ -262,33 +264,50 @@ final class BookmarkViewModel: ObservableObject {
     }
 
     private func refreshIndex() {
-        let includeZen = store.load().includeZenBookmarks
+        let config = store.load()
+        let includeZen = config.includeZenBookmarks
+        let includeFirefox = config.includeFirefoxBookmarks
         let managed = bookmarkStore.load()
         let cachedZen = allBookmarks.filter { $0.source == .zen }
-        let currentMTime = includeZen ? ZenBookmarkImporter.modificationTime() : nil
-        let needsZenReload = includeZen && (!hasLoadedZen || currentMTime != lastZenMTime)
+        let cachedFirefox = allBookmarks.filter { $0.source == .firefox }
+        let currentZenMTime = includeZen ? ZenBookmarkImporter.modificationTime() : nil
+        let currentFirefoxMTime = includeFirefox ? FirefoxBookmarkImporter.modificationTime() : nil
+        let needsZenReload = includeZen && (!hasLoadedZen || currentZenMTime != lastZenMTime)
+        let needsFirefoxReload = includeFirefox && (!hasLoadedFirefox || currentFirefoxMTime != lastFirefoxMTime)
 
-        allBookmarks = BookmarkIndex.merged(managed: managed, imported: includeZen ? cachedZen : [])
+        let imported = (includeZen ? cachedZen : []) + (includeFirefox ? cachedFirefox : [])
+        allBookmarks = BookmarkIndex.merged(managed: managed, imported: imported)
         FaviconCache.shared.prefetch(bookmarks: allBookmarks)
         if !query.isEmpty { runSearch() }
 
         if !includeZen {
             hasLoadedZen = false
             lastZenMTime = nil
-            return
+        }
+        if !includeFirefox {
+            hasLoadedFirefox = false
+            lastFirefoxMTime = nil
         }
 
-        guard needsZenReload, !refreshing else { return }
+        guard (needsZenReload || needsFirefoxReload), !refreshing else { return }
         refreshing = true
 
         Task.detached(priority: .userInitiated) {
-            let mtime = ZenBookmarkImporter.modificationTime()
-            let zen = ZenBookmarkImporter.load()
+            let zenMtime = includeZen ? ZenBookmarkImporter.modificationTime() : nil
+            let zen = includeZen ? ZenBookmarkImporter.load() : []
+            let firefoxMtime = includeFirefox ? FirefoxBookmarkImporter.modificationTime() : nil
+            let firefox = includeFirefox ? FirefoxBookmarkImporter.load() : []
             await MainActor.run {
-                self.allBookmarks = BookmarkIndex.merged(managed: managed, imported: zen)
+                self.allBookmarks = BookmarkIndex.merged(managed: managed, imported: zen + firefox)
                 FaviconCache.shared.prefetch(bookmarks: self.allBookmarks)
-                self.lastZenMTime = mtime
-                self.hasLoadedZen = true
+                if includeZen {
+                    self.lastZenMTime = zenMtime
+                    self.hasLoadedZen = true
+                }
+                if includeFirefox {
+                    self.lastFirefoxMTime = firefoxMtime
+                    self.hasLoadedFirefox = true
+                }
                 self.refreshing = false
                 if !self.query.isEmpty { self.runSearch() }
             }
@@ -395,7 +414,7 @@ struct BookmarkRow: View {
                         .padding(3)
                 } else {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(source == .zen ? Color.orange.opacity(0.25) : Color.accentColor.opacity(0.28))
+                        .fill(fallbackTint(for: source))
                     Image(systemName: "globe")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.primary.opacity(0.85))
@@ -455,6 +474,14 @@ struct BookmarkRow: View {
             result += piece
         }
         return result
+    }
+}
+
+private func fallbackTint(for source: Bookmark.Source) -> Color {
+    switch source {
+    case .zen: return Color.orange.opacity(0.25)
+    case .firefox: return Color(red: 0.95, green: 0.45, blue: 0.18).opacity(0.28)
+    case .managed: return Color.accentColor.opacity(0.28)
     }
 }
 
