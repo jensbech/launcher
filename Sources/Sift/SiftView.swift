@@ -51,6 +51,13 @@ final class SiftViewModel: ObservableObject {
         let source: Bookmark
         let actions: [BookmarkAction]
         var selectedIndex: Int
+        var subActions: SubActionsState?
+    }
+
+    struct SubActionsState: Equatable {
+        let parentAction: BookmarkAction
+        let expansion: ActionExpansion
+        var selectedIndex: Int
     }
 
     enum Result: Identifiable {
@@ -364,7 +371,14 @@ final class SiftViewModel: ObservableObject {
 
         let bookmarkResults: [BookmarkSearchResult]
         if combinedSearch {
-            let raw = FuzzyMatcher.search(value, in: bookmarks, name: { $0.name }, secondary: { $0.url })
+            let snapshot = usage
+            let raw = FuzzyMatcher.search(
+                value,
+                in: bookmarks,
+                name: { $0.name },
+                secondary: { $0.url },
+                boost: { snapshot.boost(for: $0.id) }
+            )
             bookmarkResults = Self.groupedBookmarkResults(raw)
         } else {
             bookmarkResults = []
@@ -445,6 +459,14 @@ final class SiftViewModel: ObservableObject {
 
     func moveDown() {
         if var state = actionsState {
+            if var sub = state.subActions {
+                let count = subActionItemCount(for: sub)
+                guard count > 0 else { return }
+                sub.selectedIndex = min(sub.selectedIndex + 1, count - 1)
+                state.subActions = sub
+                actionsState = state
+                return
+            }
             guard !state.actions.isEmpty else { return }
             state.selectedIndex = min(state.selectedIndex + 1, state.actions.count - 1)
             actionsState = state
@@ -456,6 +478,14 @@ final class SiftViewModel: ObservableObject {
 
     func moveUp() {
         if var state = actionsState {
+            if var sub = state.subActions {
+                let count = subActionItemCount(for: sub)
+                guard count > 0 else { return }
+                sub.selectedIndex = max(sub.selectedIndex - 1, 0)
+                state.subActions = sub
+                actionsState = state
+                return
+            }
             guard !state.actions.isEmpty else { return }
             state.selectedIndex = max(state.selectedIndex - 1, 0)
             actionsState = state
@@ -466,23 +496,48 @@ final class SiftViewModel: ObservableObject {
     }
 
     func enterActions() {
-        guard actionsState == nil,
-              results.indices.contains(selectedIndex) else { return }
+        if var state = actionsState {
+            guard state.subActions == nil,
+                  state.actions.indices.contains(state.selectedIndex),
+                  let expansion = state.actions[state.selectedIndex].expansion else { return }
+            state.subActions = SubActionsState(
+                parentAction: state.actions[state.selectedIndex],
+                expansion: expansion,
+                selectedIndex: 0
+            )
+            actionsState = state
+            GitHubActionCache.shared.ensure(expansion.cacheKey)
+            return
+        }
+        guard results.indices.contains(selectedIndex) else { return }
         guard case .bookmark(let bookmarkResult) = results[selectedIndex].result else { return }
         let actions = Self.actions(for: bookmarkResult)
         guard !actions.isEmpty else { return }
         actionsState = ActionsState(
             source: bookmarkResult.primaryBookmark,
             actions: actions,
-            selectedIndex: 0
+            selectedIndex: 0,
+            subActions: nil
         )
     }
 
     @discardableResult
     func tryExitActions() -> Bool {
+        if var state = actionsState, state.subActions != nil {
+            state.subActions = nil
+            actionsState = state
+            return true
+        }
         guard actionsState != nil else { return false }
         actionsState = nil
         return true
+    }
+
+    private func subActionItemCount(for sub: SubActionsState) -> Int {
+        if case .loaded(let items) = GitHubActionCache.shared.snapshot(sub.expansion.cacheKey) ?? .loading {
+            return items.count
+        }
+        return 0
     }
 
     private static func actions(for result: BookmarkSearchResult) -> [BookmarkAction] {
@@ -495,7 +550,8 @@ final class SiftViewModel: ObservableObject {
                     id: "env-\(variant.env)",
                     title: variant.env.capitalized,
                     symbol: BookmarkEnv.symbol(forEnv: variant.env),
-                    url: variant.bookmark.url
+                    url: variant.bookmark.url,
+                    recordID: variant.bookmark.id
                 )
             }
         }
@@ -560,8 +616,18 @@ final class SiftViewModel: ObservableObject {
 
     func activateSelection() {
         if let state = actionsState {
+            if let sub = state.subActions {
+                guard case .loaded(let items) = GitHubActionCache.shared.snapshot(sub.expansion.cacheKey) ?? .loading,
+                      items.indices.contains(sub.selectedIndex) else { return }
+                recordBookmarkUsage(state.source.id)
+                openURL(items[sub.selectedIndex].url)
+                onDeviceActivated?()
+                return
+            }
             guard state.actions.indices.contains(state.selectedIndex) else { return }
-            openURL(state.actions[state.selectedIndex].url)
+            let action = state.actions[state.selectedIndex]
+            recordBookmarkUsage(action.recordID ?? state.source.id)
+            openURL(action.url)
             onDeviceActivated?()
             return
         }
@@ -579,6 +645,7 @@ final class SiftViewModel: ObservableObject {
             sleepDisabled = SleepService.shared.isDisabled
             onDeviceActivated?()
         case .bookmark(let bookmarkResult):
+            recordBookmarkUsage(bookmarkResult.primaryBookmark.id)
             openURL(bookmarkResult.primaryBookmark.url)
             onDeviceActivated?()
         case .screenshot:
@@ -613,6 +680,11 @@ final class SiftViewModel: ObservableObject {
         }
     }
 
+    private func recordBookmarkUsage(_ id: String) {
+        usage.record(id)
+        usageStore.save(usage)
+    }
+
     func toggleSleep() {
         guard sleepCommandsEnabled else { return }
         if sleepDisabled {
@@ -641,10 +713,19 @@ final class SiftViewModel: ObservableObject {
 
     @discardableResult
     func copySelectedURL() -> Bool {
-        if let state = actionsState, state.actions.indices.contains(state.selectedIndex) {
-            let action = state.actions[state.selectedIndex]
-            copy(url: action.url, flashID: "action:\(action.id)")
-            return true
+        if let state = actionsState {
+            if let sub = state.subActions,
+               case .loaded(let items) = GitHubActionCache.shared.snapshot(sub.expansion.cacheKey) ?? .loading,
+               items.indices.contains(sub.selectedIndex) {
+                let item = items[sub.selectedIndex]
+                copy(url: item.url, flashID: "sub:\(item.id)")
+                return true
+            }
+            if state.actions.indices.contains(state.selectedIndex) {
+                let action = state.actions[state.selectedIndex]
+                copy(url: action.url, flashID: "action:\(action.id)")
+                return true
+            }
         }
         guard results.indices.contains(selectedIndex) else { return false }
         if case .bookmark(let bookmarkResult) = results[selectedIndex].result {
@@ -1037,6 +1118,27 @@ private struct InlineActionsList: View {
     let viewModel: SiftViewModel
 
     var body: some View {
+        if let sub = state.subActions {
+            SubActionsList(
+                parentTitle: sub.parentAction.title,
+                bookmarkName: state.source.name,
+                expansion: sub.expansion,
+                selectedIndex: sub.selectedIndex,
+                copyFlashID: viewModel.copyFlashID,
+                onSelect: { index in
+                    guard var current = viewModel.actionsState, var s = current.subActions else { return }
+                    s.selectedIndex = index
+                    current.subActions = s
+                    viewModel.actionsState = current
+                },
+                onActivate: { viewModel.activateSelection() }
+            )
+        } else {
+            actionList
+        }
+    }
+
+    private var actionList: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "chevron.left")
@@ -1048,7 +1150,7 @@ private struct InlineActionsList: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer()
-                Text("← to go back")
+                Text(hintText)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary.opacity(0.7))
             }
@@ -1081,6 +1183,12 @@ private struct InlineActionsList: View {
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
+                                    if action.expansion != nil {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(index == state.selectedIndex ? .primary : .secondary)
+                                            .padding(.leading, 2)
+                                    }
                                 }
                             }
                             .padding(.horizontal, 18)
@@ -1103,6 +1211,14 @@ private struct InlineActionsList: View {
                 }
             }
         }
+    }
+
+    private var hintText: String {
+        let selected = state.actions.indices.contains(state.selectedIndex) ? state.actions[state.selectedIndex] : nil
+        if selected?.expansion != nil {
+            return "→ to expand · ← to go back"
+        }
+        return "← to go back"
     }
 }
 

@@ -57,6 +57,44 @@ struct UsageTests {
         #expect(reloaded.lastLaunched["com.apple.Safari"] == now)
     }
 
+    @Test func boost_growsBeyondPreviousCap() {
+        let now = Date()
+        var heavy = UsageStats()
+        heavy.launchCounts["a"] = 50
+        heavy.lastLaunched["a"] = now.addingTimeInterval(-60 * 60 * 24 * 90)
+        var moderate = UsageStats()
+        moderate.launchCounts["a"] = 5
+        moderate.lastLaunched["a"] = now.addingTimeInterval(-60 * 60 * 24 * 90)
+        #expect(heavy.boost(for: "a", now: now) > moderate.boost(for: "a", now: now))
+    }
+
+    @Test func boost_recencyHasFinerBuckets() {
+        let now = Date()
+        var minutesAgo = UsageStats()
+        minutesAgo.launchCounts["a"] = 1
+        minutesAgo.lastLaunched["a"] = now.addingTimeInterval(-60 * 10)
+        var hoursAgo = UsageStats()
+        hoursAgo.launchCounts["a"] = 1
+        hoursAgo.lastLaunched["a"] = now.addingTimeInterval(-60 * 60 * 4)
+        var dayAgo = UsageStats()
+        dayAgo.launchCounts["a"] = 1
+        dayAgo.lastLaunched["a"] = now.addingTimeInterval(-60 * 60 * 18)
+        #expect(minutesAgo.boost(for: "a", now: now) > hoursAgo.boost(for: "a", now: now))
+        #expect(hoursAgo.boost(for: "a", now: now) > dayAgo.boost(for: "a", now: now))
+    }
+
+    @Test func boostForAny_returnsMax() {
+        let now = Date()
+        var stats = UsageStats()
+        stats.launchCounts["dev"] = 1
+        stats.lastLaunched["dev"] = now
+        stats.launchCounts["prod"] = 20
+        stats.lastLaunched["prod"] = now.addingTimeInterval(-60 * 60 * 24 * 14)
+        let result = stats.boost(forAny: ["dev", "prod"], now: now)
+        #expect(result == max(stats.boost(for: "dev", now: now), stats.boost(for: "prod", now: now)))
+        #expect(result > 0)
+    }
+
     @Test func store_missingFile_returnsEmpty() {
         let stats = UsageStore(fileURL: tempURL()).load()
         #expect(stats.launchCounts.isEmpty)

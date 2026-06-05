@@ -14,18 +14,33 @@ public struct UsageStats: Codable, Equatable {
         lastLaunched[bundleID] = date
     }
 
-    public func boost(for bundleID: String, now: Date = Date()) -> Int {
-        let countBoost = min(launchCounts[bundleID] ?? 0, 10) * 2
-        guard let last = lastLaunched[bundleID] else { return countBoost }
+    public func boost(for id: String, now: Date = Date()) -> Int {
+        let count = launchCounts[id] ?? 0
+        let countBoost: Int
+        if count <= 0 {
+            countBoost = 0
+        } else {
+            let scaled = log2(Double(count + 1)) * 14.0
+            countBoost = min(90, Int(scaled.rounded()))
+        }
+        guard let last = lastLaunched[id] else { return countBoost }
         let hours = now.timeIntervalSince(last) / 3600
         let recencyBoost: Int
         switch hours {
-        case ..<1: recencyBoost = 30
-        case ..<24: recencyBoost = 20
-        case ..<168: recencyBoost = 10
-        default: recencyBoost = 3
+        case ..<0.5: recencyBoost = 60
+        case ..<2:   recencyBoost = 50
+        case ..<8:   recencyBoost = 40
+        case ..<24:  recencyBoost = 30
+        case ..<72:  recencyBoost = 20
+        case ..<168: recencyBoost = 12
+        case ..<720: recencyBoost = 6
+        default:     recencyBoost = 1
         }
         return countBoost + recencyBoost
+    }
+
+    public func boost(forAny ids: [String], now: Date = Date()) -> Int {
+        ids.map { boost(for: $0, now: now) }.max() ?? 0
     }
 }
 

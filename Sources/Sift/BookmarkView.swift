@@ -52,6 +52,13 @@ final class BookmarkViewModel: ObservableObject {
         let source: Bookmark
         let actions: [BookmarkAction]
         var selectedIndex: Int
+        var subActions: SubActionsState?
+    }
+
+    struct SubActionsState: Equatable {
+        let parentAction: BookmarkAction
+        let expansion: ActionExpansion
+        var selectedIndex: Int
     }
 
     @Published var query: String = ""
@@ -71,6 +78,8 @@ final class BookmarkViewModel: ObservableObject {
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
+    private let usageStore: UsageStore
+    private var usage: UsageStats
     private var allBookmarks: [Bookmark] = []
     private var lastZenMTime: Date?
     private var hasLoadedZen = false
@@ -78,10 +87,17 @@ final class BookmarkViewModel: ObservableObject {
     private var hasLoadedFirefox = false
     private var refreshing = false
 
-    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore()) {
+    init(store: Store, bookmarkStore: BookmarkStore = BookmarkStore(), usageStore: UsageStore = UsageStore()) {
         self.store = store
         self.bookmarkStore = bookmarkStore
+        self.usageStore = usageStore
+        self.usage = usageStore.load()
         refreshIndex()
+    }
+
+    func recordBookmarkOpen(_ bookmark: Bookmark) {
+        usage.record(bookmark.id)
+        usageStore.save(usage)
     }
 
     func reload() {
@@ -101,12 +117,24 @@ final class BookmarkViewModel: ObservableObject {
     }
 
     func enterActions() {
-        guard actionsState == nil,
-              results.indices.contains(selectedIndex) else { return }
+        if var state = actionsState {
+            guard state.subActions == nil,
+                  state.actions.indices.contains(state.selectedIndex),
+                  let expansion = state.actions[state.selectedIndex].expansion else { return }
+            state.subActions = SubActionsState(
+                parentAction: state.actions[state.selectedIndex],
+                expansion: expansion,
+                selectedIndex: 0
+            )
+            actionsState = state
+            GitHubActionCache.shared.ensure(expansion.cacheKey)
+            return
+        }
+        guard results.indices.contains(selectedIndex) else { return }
         let result = results[selectedIndex]
         let actions = Self.actions(for: result)
         guard !actions.isEmpty else { return }
-        actionsState = ActionsState(source: result.primaryBookmark, actions: actions, selectedIndex: 0)
+        actionsState = ActionsState(source: result.primaryBookmark, actions: actions, selectedIndex: 0, subActions: nil)
     }
 
     static func actions(for result: Result) -> [BookmarkAction] {
@@ -119,7 +147,8 @@ final class BookmarkViewModel: ObservableObject {
                     id: "env-\(variant.env)",
                     title: variant.env.capitalized,
                     symbol: BookmarkEnv.symbol(forEnv: variant.env),
-                    url: variant.bookmark.url
+                    url: variant.bookmark.url,
+                    recordID: variant.bookmark.id
                 )
             }
         }
@@ -127,6 +156,11 @@ final class BookmarkViewModel: ObservableObject {
 
     @discardableResult
     func tryExitActions() -> Bool {
+        if var state = actionsState, state.subActions != nil {
+            state.subActions = nil
+            actionsState = state
+            return true
+        }
         guard actionsState != nil else { return false }
         actionsState = nil
         return true
@@ -138,7 +172,14 @@ final class BookmarkViewModel: ObservableObject {
             results = []
             return
         }
-        let matches = FuzzyMatcher.search(query, in: allBookmarks, name: { $0.name }, secondary: { $0.url })
+        let snapshot = usage
+        let matches = FuzzyMatcher.search(
+            query,
+            in: allBookmarks,
+            name: { $0.name },
+            secondary: { $0.url },
+            boost: { snapshot.boost(for: $0.id) }
+        )
         results = Self.groupedResults(matches, limit: Self.resultLimit)
         DebugLog.write("BookmarkVM.runSearch matched=\(matches.count) results=\(results.count)")
         selectedIndex = 0
@@ -203,6 +244,14 @@ final class BookmarkViewModel: ObservableObject {
 
     func moveDown() {
         if var state = actionsState {
+            if var sub = state.subActions {
+                let count = subActionItemCount(for: sub)
+                guard count > 0 else { return }
+                sub.selectedIndex = min(sub.selectedIndex + 1, count - 1)
+                state.subActions = sub
+                actionsState = state
+                return
+            }
             guard !state.actions.isEmpty else { return }
             state.selectedIndex = min(state.selectedIndex + 1, state.actions.count - 1)
             actionsState = state
@@ -214,6 +263,14 @@ final class BookmarkViewModel: ObservableObject {
 
     func moveUp() {
         if var state = actionsState {
+            if var sub = state.subActions {
+                let count = subActionItemCount(for: sub)
+                guard count > 0 else { return }
+                sub.selectedIndex = max(sub.selectedIndex - 1, 0)
+                state.subActions = sub
+                actionsState = state
+                return
+            }
             guard !state.actions.isEmpty else { return }
             state.selectedIndex = max(state.selectedIndex - 1, 0)
             actionsState = state
@@ -225,12 +282,35 @@ final class BookmarkViewModel: ObservableObject {
 
     func activateSelection() {
         if let state = actionsState {
+            if let sub = state.subActions {
+                guard case .loaded(let items) = GitHubActionCache.shared.snapshot(sub.expansion.cacheKey) ?? .loading,
+                      items.indices.contains(sub.selectedIndex) else { return }
+                recordBookmarkOpen(state.source)
+                onOpenURL?(items[sub.selectedIndex].url)
+                return
+            }
             guard state.actions.indices.contains(state.selectedIndex) else { return }
-            onOpenURL?(state.actions[state.selectedIndex].url)
+            let action = state.actions[state.selectedIndex]
+            if let recordID = action.recordID {
+                usage.record(recordID)
+                usageStore.save(usage)
+            } else {
+                recordBookmarkOpen(state.source)
+            }
+            onOpenURL?(action.url)
             return
         }
         guard results.indices.contains(selectedIndex) else { return }
-        onOpen?(results[selectedIndex].primaryBookmark)
+        let bookmark = results[selectedIndex].primaryBookmark
+        recordBookmarkOpen(bookmark)
+        onOpen?(bookmark)
+    }
+
+    private func subActionItemCount(for sub: SubActionsState) -> Int {
+        if case .loaded(let items) = GitHubActionCache.shared.snapshot(sub.expansion.cacheKey) ?? .loading {
+            return items.count
+        }
+        return 0
     }
 
     func escape() {
@@ -240,10 +320,19 @@ final class BookmarkViewModel: ObservableObject {
 
     @discardableResult
     func copySelectedURL() -> Bool {
-        if let state = actionsState, state.actions.indices.contains(state.selectedIndex) {
-            let action = state.actions[state.selectedIndex]
-            copy(url: action.url, flashID: "action:\(action.id)")
-            return true
+        if let state = actionsState {
+            if let sub = state.subActions,
+               case .loaded(let items) = GitHubActionCache.shared.snapshot(sub.expansion.cacheKey) ?? .loading,
+               items.indices.contains(sub.selectedIndex) {
+                let item = items[sub.selectedIndex]
+                copy(url: item.url, flashID: "sub:\(item.id)")
+                return true
+            }
+            if state.actions.indices.contains(state.selectedIndex) {
+                let action = state.actions[state.selectedIndex]
+                copy(url: action.url, flashID: "action:\(action.id)")
+                return true
+            }
         }
         guard results.indices.contains(selectedIndex) else { return false }
         copy(url: results[selectedIndex].primaryBookmark.url, flashID: "result:\(results[selectedIndex].id)")
@@ -490,6 +579,27 @@ struct BookmarkActionsList: View {
     let viewModel: BookmarkViewModel
 
     var body: some View {
+        if let sub = state.subActions {
+            SubActionsList(
+                parentTitle: sub.parentAction.title,
+                bookmarkName: state.source.name,
+                expansion: sub.expansion,
+                selectedIndex: sub.selectedIndex,
+                copyFlashID: viewModel.copyFlashID,
+                onSelect: { index in
+                    guard var current = viewModel.actionsState, var s = current.subActions else { return }
+                    s.selectedIndex = index
+                    current.subActions = s
+                    viewModel.actionsState = current
+                },
+                onActivate: { viewModel.activateSelection() }
+            )
+        } else {
+            actionList
+        }
+    }
+
+    private var actionList: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "chevron.left")
@@ -501,7 +611,7 @@ struct BookmarkActionsList: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer()
-                Text("← to go back")
+                Text(hintText)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary.opacity(0.7))
             }
@@ -534,6 +644,12 @@ struct BookmarkActionsList: View {
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
+                                    if action.expansion != nil {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(index == state.selectedIndex ? .primary : .secondary)
+                                            .padding(.leading, 2)
+                                    }
                                 }
                             }
                             .padding(.horizontal, 18)
@@ -556,5 +672,13 @@ struct BookmarkActionsList: View {
                 }
             }
         }
+    }
+
+    private var hintText: String {
+        let selected = state.actions.indices.contains(state.selectedIndex) ? state.actions[state.selectedIndex] : nil
+        if selected?.expansion != nil {
+            return "→ to expand · ← to go back"
+        }
+        return "← to go back"
     }
 }
