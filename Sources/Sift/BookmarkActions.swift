@@ -67,6 +67,7 @@ enum BookmarkActions {
         return [
             BookmarkAction(id: "actions",  title: "Actions",        symbol: "play.fill",                    url: "\(base)/actions"),
             BookmarkAction(id: "prs",      title: "Pull requests",  symbol: "arrow.triangle.pull",          url: "\(base)/pulls"),
+            BookmarkAction(id: "branches", title: "Branches",       symbol: "arrow.triangle.branch",        url: "\(base)/branches"),
             BookmarkAction(id: "issues",   title: "Issues",         symbol: "exclamationmark.circle",       url: "\(base)/issues"),
             BookmarkAction(id: "wiki",     title: "Wiki",           symbol: "book",                         url: "\(base)/wiki"),
             BookmarkAction(id: "releases", title: "Releases",       symbol: "tag",                          url: "\(base)/releases")
