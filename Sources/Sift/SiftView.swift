@@ -12,6 +12,8 @@ final class SiftViewModel: ObservableObject {
         }
         let kind: Kind
         let match: FuzzyMatch
+        let displayName: String
+        let displayURL: String
 
         var id: String {
             switch kind {
@@ -24,20 +26,6 @@ final class SiftViewModel: ObservableObject {
             switch kind {
             case .single(let b): return b
             case .envGroup(let b, _, _): return b
-            }
-        }
-
-        var displayName: String {
-            switch kind {
-            case .single(let b): return b.name
-            case .envGroup(let b, _, _): return BookmarkEnv.strippedTitle(b.name)
-            }
-        }
-
-        var displayURL: String {
-            switch kind {
-            case .single(let b): return b.url
-            case .envGroup(_, _, let template): return template
             }
         }
 
@@ -126,6 +114,16 @@ final class SiftViewModel: ObservableObject {
             case .bookmark: return 1
             }
         }
+
+        var matchedIndices: [Int] {
+            switch self {
+            case .app(_, let m): return m.matched
+            case .device(_, let m): return m.matched
+            case .sleep(_, let m): return m.matched
+            case .bookmark(let r): return r.match.matched
+            case .screenshot(let m): return m.matched
+            }
+        }
     }
 
     private struct ScreenshotMatchTarget {
@@ -172,10 +170,13 @@ final class SiftViewModel: ObservableObject {
     private var allApps: [AppItem] = []
     private var disabledIDs: Set<String> = []
     private var searchableApps: [AppItem] = []
+    private var appNameChars: [String: [Character]] = [:]
     private var devices: [DeviceItem] = []
     private var disabledDeviceIDs: Set<String> = []
     private var audioSwitcherEnabled: Bool = true
     private var bookmarks: [Bookmark] = []
+    private var bookmarkNameChars: [String: [Character]] = [:]
+    private var bookmarkUrlChars: [String: [Character]] = [:]
     private var cachedZenBookmarks: [Bookmark] = []
     private var lastZenMTime: Date?
     private var cachedFirefoxBookmarks: [Bookmark] = []
@@ -203,7 +204,16 @@ final class SiftViewModel: ObservableObject {
         runningOutputsCancellable = nil
     }
 
+    private var lastIndexScanAt: Date?
+    private static let indexScanThrottleSeconds: TimeInterval = 30
+
     func refreshIndex() {
+        if let last = lastIndexScanAt,
+           Date().timeIntervalSince(last) < Self.indexScanThrottleSeconds,
+           !allApps.isEmpty {
+            return
+        }
+        lastIndexScanAt = Date()
         Task.detached(priority: .utility) {
             let scanned = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
             await MainActor.run {
@@ -216,6 +226,12 @@ final class SiftViewModel: ObservableObject {
 
     private func rebuildSearchableApps() {
         searchableApps = allApps.filter { !disabledIDs.contains($0.id) }
+        var nameChars: [String: [Character]] = [:]
+        nameChars.reserveCapacity(searchableApps.count)
+        for item in searchableApps {
+            nameChars[item.id] = FuzzyMatcher.lowercasedChars(item.name)
+        }
+        appNameChars = nameChars
     }
 
     func reload() {
@@ -259,6 +275,8 @@ final class SiftViewModel: ObservableObject {
             refreshBookmarks(config: config)
         } else {
             bookmarks = []
+            bookmarkNameChars = [:]
+            bookmarkUrlChars = [:]
         }
     }
 
@@ -295,6 +313,16 @@ final class SiftViewModel: ObservableObject {
             lastFirefoxMTime = nil
         }
         bookmarks = BookmarkIndex.merged(managed: managed, imported: zen + firefox)
+        var nameChars: [String: [Character]] = [:]
+        var urlChars: [String: [Character]] = [:]
+        nameChars.reserveCapacity(bookmarks.count)
+        urlChars.reserveCapacity(bookmarks.count)
+        for bookmark in bookmarks {
+            nameChars[bookmark.id] = FuzzyMatcher.lowercasedChars(bookmark.name)
+            urlChars[bookmark.id] = FuzzyMatcher.lowercasedChars(bookmark.url)
+        }
+        bookmarkNameChars = nameChars
+        bookmarkUrlChars = urlChars
         FaviconCache.shared.prefetch(bookmarks: bookmarks)
     }
 
@@ -318,7 +346,9 @@ final class SiftViewModel: ObservableObject {
 
     func updateQuery(_ value: String) {
         DebugLog.write("SiftVM.updateQuery in='\(value)' prevQuery='\(query)'")
+        if value == query && actionsState == nil { return }
         if actionsState != nil { actionsState = nil }
+        guard value != query else { return }
         query = value
 
         pendingSearchTask?.cancel()
@@ -341,9 +371,15 @@ final class SiftViewModel: ObservableObject {
 
     private func performSearch(for value: String) {
         let appPool = searchableApps
-        let appMatches = FuzzyMatcher.search(value, in: appPool) { [usage] item in
-            usage.boost(for: item.id)
-        }
+        let appNameChars = self.appNameChars
+        let now = Date()
+        let appMatches = FuzzyMatcher.searchPrecomputed(
+            value,
+            in: appPool,
+            nameChars: { appNameChars[$0.id] ?? FuzzyMatcher.lowercasedChars($0.name) },
+            name: { $0.name },
+            boost: { [usage] item in usage.boost(for: item.id, now: now) }
+        )
 
         let deviceMatches: [(DeviceItem, FuzzyMatch)]
         if devicesEnabled {
@@ -363,12 +399,15 @@ final class SiftViewModel: ObservableObject {
         let bookmarkResults: [BookmarkSearchResult]
         if combinedSearch {
             let snapshot = usage
-            let raw = FuzzyMatcher.search(
+            let nameChars = self.bookmarkNameChars
+            let urlChars = self.bookmarkUrlChars
+            let raw = FuzzyMatcher.searchPrecomputed(
                 value,
                 in: bookmarks,
+                nameChars: { nameChars[$0.id] ?? FuzzyMatcher.lowercasedChars($0.name) },
+                secondaryChars: { urlChars[$0.id] ?? FuzzyMatcher.lowercasedChars($0.url) },
                 name: { $0.name },
-                secondary: { $0.url },
-                boost: { snapshot.boost(for: $0.id) }
+                boost: { snapshot.boost(for: $0.id, now: now) }
             )
             bookmarkResults = Self.groupedBookmarkResults(raw)
         } else {
@@ -413,7 +452,7 @@ final class SiftViewModel: ObservableObject {
         results = sliced.map { result in
             RenderedResult(
                 result: result,
-                highlightedName: Self.highlight(rawName: Self.rawName(for: result), query: value)
+                highlightedName: Self.highlight(rawName: Self.rawName(for: result), matched: result.matchedIndices)
             )
         }
         DebugLog.write("SiftVM.updateQuery matched=\(merged.count) results=\(results.count)")
@@ -430,13 +469,13 @@ final class SiftViewModel: ObservableObject {
         }
     }
 
-    static func highlight(rawName: String, query: String) -> AttributedString {
+    static func highlight(rawName: String, matched: [Int]) -> AttributedString {
+        let matchedSet = Set(matched)
         let chars = Array(rawName)
-        let matched = Set(FuzzyMatcher.matchedIndices(query: query, candidate: rawName) ?? [])
         var result = AttributedString()
         for (index, char) in chars.enumerated() {
             var piece = AttributedString(String(char))
-            if matched.contains(index) {
+            if matchedSet.contains(index) {
                 piece.font = .system(size: 16, weight: .semibold)
                 piece.foregroundColor = .primary
             } else {
@@ -574,7 +613,12 @@ final class SiftViewModel: ObservableObject {
                 }
                 groups[key] = entry
             } else {
-                output.append(BookmarkSearchResult(kind: .single(bookmark), match: match))
+                output.append(BookmarkSearchResult(
+                    kind: .single(bookmark),
+                    match: match,
+                    displayName: bookmark.name,
+                    displayURL: bookmark.url
+                ))
             }
         }
 
@@ -589,10 +633,18 @@ final class SiftViewModel: ObservableObject {
                 let defaultBookmark = ordered.first?.bookmark ?? entry.variants[0].bookmark
                 output.append(BookmarkSearchResult(
                     kind: .envGroup(defaultBookmark: defaultBookmark, variants: ordered, templateURL: key),
-                    match: entry.bestMatch
+                    match: entry.bestMatch,
+                    displayName: BookmarkEnv.strippedTitle(defaultBookmark.name),
+                    displayURL: key
                 ))
             } else {
-                output.append(BookmarkSearchResult(kind: .single(entry.variants[0].bookmark), match: entry.bestMatch))
+                let bookmark = entry.variants[0].bookmark
+                output.append(BookmarkSearchResult(
+                    kind: .single(bookmark),
+                    match: entry.bestMatch,
+                    displayName: bookmark.name,
+                    displayURL: bookmark.url
+                ))
             }
         }
 
@@ -755,7 +807,7 @@ struct SiftView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                SiftLogoButton(viewModel: viewModel)
+                SiftLogoButton(onTap: { viewModel.tapLogo() })
                 SearchField(
                     text: Binding(get: { viewModel.query }, set: { viewModel.updateQuery($0) }),
                     focusToken: viewModel.focusToken,
@@ -767,10 +819,13 @@ struct SiftView: View {
                     onMoveLeft: { viewModel.tryExitActions() }
                 )
                 if viewModel.screenshotEnabled {
-                    ScreenshotButton(viewModel: viewModel)
+                    ScreenshotButton(onTrigger: { viewModel.startScreenshotCapture() })
                 }
                 if viewModel.sleepCommandsEnabled {
-                    SleepEyeButton(viewModel: viewModel)
+                    SleepEyeButton(
+                        sleepDisabled: viewModel.sleepDisabled,
+                        onToggle: { viewModel.toggleSleep() }
+                    )
                 }
             }
             .padding(.horizontal, 22)
@@ -942,33 +997,44 @@ private struct SourcePill: View {
 }
 
 private struct AudioVisualizer: View {
-    @ObservedObject private var meter = AudioMeterService.shared
+    @State private var bars: [Float] = Array(repeating: 0, count: AudioMeterService.barCount)
+    @State private var isAvailable: Bool = false
+    @State private var lastError: String?
     private let maxHeight: CGFloat = 13
     private static let bias: [CGFloat] = [0.65, 0.95, 1.0, 0.85, 0.55]
     private static let accent = Color(red: 0.36, green: 0.92, blue: 0.55)
 
     var body: some View {
         Group {
-            if meter.isAvailable {
+            if isAvailable {
                 HStack(alignment: .center, spacing: 2) {
-                    ForEach(0..<meter.bars.count, id: \.self) { i in
-                        let base = CGFloat(meter.bars[i])
+                    ForEach(0..<bars.count, id: \.self) { i in
+                        let base = CGFloat(bars[i])
                         let b = Self.bias[i % Self.bias.count]
                         let h = max(2, min(maxHeight, base * b * maxHeight * 1.8))
                         Capsule()
                             .fill(Self.accent)
                             .frame(width: 2.2, height: h)
-                            .animation(.easeOut(duration: 0.07), value: meter.bars[i])
+                            .animation(.easeOut(duration: 0.07), value: bars[i])
                     }
                 }
             } else {
                 Image(systemName: "waveform.slash")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
-                    .help(meter.lastError ?? "Audio tap unavailable")
+                    .help(lastError ?? "Audio tap unavailable")
             }
         }
         .frame(height: maxHeight)
+        .onReceive(AudioMeterService.shared.$bars) { newBars in
+            if newBars != bars { bars = newBars }
+        }
+        .onReceive(AudioMeterService.shared.$isAvailable) { newValue in
+            if newValue != isAvailable { isAvailable = newValue }
+        }
+        .onReceive(AudioMeterService.shared.$lastError) { newValue in
+            if newValue != lastError { lastError = newValue }
+        }
     }
 }
 
@@ -1146,8 +1212,7 @@ private struct InlineActionsList: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(0..<state.actions.count, id: \.self) { index in
-                            let action = state.actions[index]
+                        ForEach(Array(state.actions.enumerated()), id: \.element.id) { index, action in
                             HStack(spacing: 14) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1179,7 +1244,7 @@ private struct InlineActionsList: View {
                             .padding(.horizontal, 18)
                             .padding(.vertical, 8)
                             .background(index == state.selectedIndex ? Color.accentColor.opacity(0.35) : Color.clear)
-                            .id(index)
+                            .id(action.id)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 var s = state
@@ -1192,7 +1257,9 @@ private struct InlineActionsList: View {
                 }
                 .frame(maxHeight: 320)
                 .onChange(of: state.selectedIndex) { _, newIndex in
-                    proxy.scrollTo(newIndex)
+                    if state.actions.indices.contains(newIndex) {
+                        proxy.scrollTo(state.actions[newIndex].id)
+                    }
                 }
             }
         }
@@ -1250,14 +1317,14 @@ private struct BookmarkLeadingIcon: View {
 }
 
 private struct SiftLogoButton: View {
-    @ObservedObject var viewModel: SiftViewModel
+    let onTap: () -> Void
     @State private var hover = false
     @State private var press = false
 
     var body: some View {
         Button {
             press = true
-            viewModel.tapLogo()
+            onTap()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { press = false }
         } label: {
             SiftMark(size: 20, color: .white.opacity(hover ? 1 : 0.92))
@@ -1275,12 +1342,12 @@ private struct SiftLogoButton: View {
 }
 
 private struct ScreenshotButton: View {
-    @ObservedObject var viewModel: SiftViewModel
+    let onTrigger: () -> Void
     @State private var hover = false
 
     var body: some View {
         Button {
-            viewModel.startScreenshotCapture()
+            onTrigger()
         } label: {
             Image(systemName: "selection.pin.in.out")
                 .font(.system(size: 14, weight: .medium))
@@ -1302,21 +1369,22 @@ private struct ScreenshotButton: View {
 }
 
 private struct SleepEyeButton: View {
-    @ObservedObject var viewModel: SiftViewModel
+    let sleepDisabled: Bool
+    let onToggle: () -> Void
     @State private var hover = false
 
     private static let yellow = Color(red: 1.0, green: 0.82, blue: 0.18)
 
     var body: some View {
         Button {
-            viewModel.toggleSleep()
+            onToggle()
         } label: {
             Image(systemName: "eye.fill")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(viewModel.sleepDisabled
+                .foregroundStyle(sleepDisabled
                     ? Self.yellow
                     : Color.white.opacity(hover ? 0.55 : 0.32))
-                .shadow(color: viewModel.sleepDisabled
+                .shadow(color: sleepDisabled
                     ? Self.yellow.opacity(0.5)
                     : .clear, radius: 3)
                 .padding(.horizontal, 6)
@@ -1330,11 +1398,11 @@ private struct SleepEyeButton: View {
         .buttonStyle(.plain)
         .focusable(false)
         .onHover { hover = $0 }
-        .help(viewModel.sleepDisabled
+        .help(sleepDisabled
             ? "Sleep is disabled — click to re-enable"
             : "Sleep is enabled — click to keep your Mac awake")
         .animation(.easeOut(duration: 0.12), value: hover)
-        .animation(.easeOut(duration: 0.18), value: viewModel.sleepDisabled)
+        .animation(.easeOut(duration: 0.18), value: sleepDisabled)
     }
 }
 

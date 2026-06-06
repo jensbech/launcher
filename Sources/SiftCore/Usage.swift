@@ -46,6 +46,9 @@ public struct UsageStats: Codable, Equatable {
 
 public final class UsageStore {
     public let fileURL: URL
+    private let lock = NSLock()
+    private var cachedStats: UsageStats?
+    private var cachedMtime: Date?
 
     public init(fileURL: URL = UsageStore.defaultURL) {
         self.fileURL = fileURL
@@ -57,10 +60,29 @@ public final class UsageStore {
     }
 
     public func load() -> UsageStats {
+        let currentMtime = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+
+        lock.lock()
+        if let cached = cachedStats, currentMtime == cachedMtime {
+            defer { lock.unlock() }
+            return cached
+        }
+        lock.unlock()
+
         guard let data = try? Data(contentsOf: fileURL),
               let stats = try? JSONDecoder().decode(UsageStats.self, from: data) else {
-            return UsageStats()
+            let fallback = UsageStats()
+            lock.lock()
+            cachedStats = fallback
+            cachedMtime = currentMtime
+            lock.unlock()
+            return fallback
         }
+
+        lock.lock()
+        cachedStats = stats
+        cachedMtime = currentMtime
+        lock.unlock()
         return stats
     }
 
@@ -73,5 +95,10 @@ public final class UsageStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(stats) else { return }
         try? data.write(to: fileURL)
+        let newMtime = (try? FileManager.default.attributesOfItem(atPath: fileURL.path))?[.modificationDate] as? Date
+        lock.lock()
+        cachedStats = stats
+        cachedMtime = newMtime
+        lock.unlock()
     }
 }

@@ -13,25 +13,29 @@ final class ScreenshotController {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("sift-shot-\(UUID().uuidString).png")
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-i", "-t", "png", url.path]
-        task.standardOutput = FileHandle.nullDevice
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return
-        }
+        Task.detached(priority: .userInitiated) {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            task.arguments = ["-i", "-t", "png", url.path]
+            task.standardOutput = FileHandle.nullDevice
+            task.standardError = FileHandle.nullDevice
+            do {
+                try task.run()
+                task.waitUntilExit()
+            } catch {
+                return
+            }
 
-        guard FileManager.default.fileExists(atPath: url.path),
-              let image = NSImage(contentsOf: url) else {
-            return
-        }
-        try? FileManager.default.removeItem(at: url)
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let image = NSImage(contentsOf: url) else {
+                return
+            }
+            try? FileManager.default.removeItem(at: url)
 
-        present(image: image)
+            await MainActor.run { [weak self] in
+                self?.present(image: image)
+            }
+        }
     }
 
     private func present(image: NSImage) {

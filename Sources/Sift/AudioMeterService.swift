@@ -51,6 +51,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
 
     private var lastAudibleAt: [pid_t: TimeInterval] = [:]
     private static let audibilityThreshold: Float = 0.0015
+    private static let audibilityRMSThreshold: Float = audibilityThreshold * 0.5
     private static let audibilityWindowSec: TimeInterval = 0.6
 
     private var refreshTimer: Timer?
@@ -66,6 +67,8 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private var displayBuffer: [Float] = Array(repeating: 0, count: barCount)
     private var silentTickCount: Int = 0
     private static let silentPauseThreshold: Int = 20
+    private static let silentLevelEpsilon: Float = 1e-4
+    private static let zeroBars: [Float] = Array(repeating: 0, count: barCount)
 
     private var agcEnvelope: Float = 0.1
     private static let agcAttack: Float = 0.35
@@ -107,11 +110,10 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         lastAudibleAt = [:]
         silentTickCount = 0
         agcEnvelope = 0.1
-        ringBuffer = Array(repeating: 0, count: Self.barCount)
+        ringBuffer = Self.zeroBars
         ringHead = 0
-        displayBuffer = Array(repeating: 0, count: Self.barCount)
-        let cleared: [Float] = Array(repeating: 0, count: Self.barCount)
-        if bars != cleared { bars = cleared }
+        displayBuffer = Self.zeroBars
+        if bars != Self.zeroBars { bars = Self.zeroBars }
         if level != 0 { level = 0 }
         if isAvailable { isAvailable = false }
         if !activeSources.isEmpty { activeSources = [] }
@@ -145,6 +147,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
     private func setupTap() {
         teardown()
         guard let outputUID = defaultOutputUID() else {
+            currentOutputUID = nil
             report("no default output device")
             return
         }
@@ -320,11 +323,13 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
         let totalBuffers = buffers.count
 
-        var localSumSq = [Float](repeating: 0, count: slices.count)
-        var localSamples = [Int](repeating: 0, count: slices.count)
-        var localPeak = [Float](repeating: 0, count: slices.count)
-
-        for (i, slice) in slices.enumerated() {
+        os_unfair_lock_lock(&lock)
+        let upper = min(slices.count, atomicRMSSq.count)
+        for i in 0..<upper {
+            let slice = slices[i]
+            var sliceSumSq: Float = 0
+            var slicePeak: Float = 0
+            var sliceSamples: Int = 0
             for j in 0..<slice.count {
                 let idx = slice.start + j
                 guard idx < totalBuffers else { break }
@@ -335,20 +340,15 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
                 let ptr = data.assumingMemoryBound(to: Float32.self)
                 var bufSumSq: Float = 0
                 vDSP_measqv(ptr, 1, &bufSumSq, floatCount)
-                localSumSq[i] += bufSumSq * Float(floatCount)
+                sliceSumSq += bufSumSq * Float(floatCount)
                 var bufPeak: Float = 0
                 vDSP_maxmgv(ptr, 1, &bufPeak, floatCount)
-                if bufPeak > localPeak[i] { localPeak[i] = bufPeak }
-                localSamples[i] += Int(floatCount)
+                if bufPeak > slicePeak { slicePeak = bufPeak }
+                sliceSamples += Int(floatCount)
             }
-        }
-
-        os_unfair_lock_lock(&lock)
-        let upper = min(slices.count, atomicRMSSq.count)
-        for i in 0..<upper {
-            atomicRMSSq[i] += localSumSq[i]
-            atomicSamples[i] += localSamples[i]
-            if localPeak[i] > atomicPeak[i] { atomicPeak[i] = localPeak[i] }
+            atomicRMSSq[i] += sliceSumSq
+            atomicSamples[i] += sliceSamples
+            if slicePeak > atomicPeak[i] { atomicPeak[i] = slicePeak }
         }
         ioProcCallCount &+= 1
         os_unfair_lock_unlock(&lock)
@@ -368,7 +368,6 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         let sumSqs = atomicRMSSq
         let samples = atomicSamples
         let peaks = atomicPeak
-        let calls = ioProcCallCount
         ioProcCallCount = 0
         for i in 0..<atomicRMSSq.count {
             atomicRMSSq[i] = 0
@@ -378,8 +377,6 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         let tapsSnapshot = taps
         os_unfair_lock_unlock(&lock)
 
-        _ = calls
-
         let now = CACurrentMediaTime()
         var mixRMS: Float = 0
         var mixPeak: Float = 0
@@ -388,7 +385,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
             let n = samples[i]
             let rmsI = n > 0 ? sqrtf(sumSqs[i] / Float(n)) : 0
             let peakI = peaks[i]
-            if peakI >= Self.audibilityThreshold || rmsI >= Self.audibilityThreshold * 0.5 {
+            if peakI >= Self.audibilityThreshold || rmsI >= Self.audibilityRMSThreshold {
                 lastAudibleAt[tapsSnapshot[i].pid] = now
             }
             mixRMS = max(mixRMS, rmsI)
@@ -397,7 +394,9 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
 
         refreshAudibleSources(now: now)
         let hasSignal = mixRMS != 0 || mixPeak != 0
-        if !hasSignal && level == 0 && silentTickCount >= Self.silentPauseThreshold {
+        if !hasSignal && level < Self.silentLevelEpsilon && silentTickCount >= Self.silentPauseThreshold {
+            if level != 0 { level = 0 }
+            if bars != Self.zeroBars { bars = Self.zeroBars }
             return
         }
 
@@ -471,7 +470,6 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
         ) { [weak self] _, _ in
             guard let self, self.isRunning else { return }
             self.scheduleRebuild()
-            self.refreshRunningOutputs()
             self.refreshSources()
         }
     }
@@ -550,9 +548,17 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
 
     @discardableResult
     private func refreshAudibleSources(now: TimeInterval) -> Bool {
+        if lastAudibleAt.isEmpty && activeSources.isEmpty { return false }
         let cutoff = now - Self.audibilityWindowSec
+        let pruneCutoff = now - Self.audibilityWindowSec * 10
         var collected: [SourceApp] = []
-        for (pid, ts) in lastAudibleAt where ts >= cutoff {
+        var stalePIDs: [pid_t] = []
+        for (pid, ts) in lastAudibleAt {
+            if ts < pruneCutoff {
+                stalePIDs.append(pid)
+                continue
+            }
+            guard ts >= cutoff else { continue }
             let source: SourceApp
             if let cached = sourceCache[pid] {
                 source = cached
@@ -567,6 +573,7 @@ final class AudioMeterService: ObservableObject, @unchecked Sendable {
                 collected.append(source)
             }
         }
+        for pid in stalePIDs { lastAudibleAt.removeValue(forKey: pid) }
         collected.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         if collected != activeSources {
             activeSources = collected

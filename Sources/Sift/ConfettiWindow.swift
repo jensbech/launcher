@@ -73,7 +73,7 @@ struct ConfettiOverlay: View {
     }
 
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { ctx in
             Canvas { gc, _ in
                 let elapsed = ctx.date.timeIntervalSince(triggeredAt)
                 guard elapsed >= 0, elapsed <= duration else { return }

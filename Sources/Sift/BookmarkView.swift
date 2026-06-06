@@ -13,6 +13,9 @@ final class BookmarkViewModel: ObservableObject {
         }
         let kind: Kind
         let match: FuzzyMatch
+        let highlightedName: AttributedString
+        let displayName: String
+        let displayURL: String
 
         var id: String {
             switch kind {
@@ -25,20 +28,6 @@ final class BookmarkViewModel: ObservableObject {
             switch kind {
             case .single(let b): return b
             case .envGroup(let b, _, _): return b
-            }
-        }
-
-        var displayName: String {
-            switch kind {
-            case .single(let b): return b.name
-            case .envGroup(let b, _, _): return BookmarkEnv.strippedTitle(b.name)
-            }
-        }
-
-        var displayURL: String {
-            switch kind {
-            case .single(let b): return b.url
-            case .envGroup(_, _, let template): return template
             }
         }
 
@@ -81,6 +70,8 @@ final class BookmarkViewModel: ObservableObject {
     private let usageStore: UsageStore
     private var usage: UsageStats
     private var allBookmarks: [Bookmark] = []
+    private var bookmarkNameChars: [String: [Character]] = [:]
+    private var bookmarkUrlChars: [String: [Character]] = [:]
     private var lastZenMTime: Date?
     private var hasLoadedZen = false
     private var lastFirefoxMTime: Date?
@@ -111,7 +102,9 @@ final class BookmarkViewModel: ObservableObject {
 
     func updateQuery(_ value: String) {
         DebugLog.write("BookmarkVM.updateQuery in='\(value)' prevQuery='\(query)'")
+        if value == query && actionsState == nil { return }
         if actionsState != nil { actionsState = nil }
+        guard value != query else { return }
         query = value
         runSearch()
     }
@@ -154,6 +147,15 @@ final class BookmarkViewModel: ObservableObject {
         }
     }
 
+    static func hasActions(for result: Result) -> Bool {
+        switch result.kind {
+        case .single(let b):
+            return BookmarkActions.hasActions(for: b)
+        case .envGroup(_, let variants, _):
+            return !variants.isEmpty
+        }
+    }
+
     @discardableResult
     func tryExitActions() -> Bool {
         if var state = actionsState, state.subActions != nil {
@@ -173,12 +175,16 @@ final class BookmarkViewModel: ObservableObject {
             return
         }
         let snapshot = usage
-        let matches = FuzzyMatcher.search(
+        let nameChars = self.bookmarkNameChars
+        let urlChars = self.bookmarkUrlChars
+        let now = Date()
+        let matches = FuzzyMatcher.searchPrecomputed(
             query,
             in: allBookmarks,
+            nameChars: { nameChars[$0.id] ?? FuzzyMatcher.lowercasedChars($0.name) },
+            secondaryChars: { urlChars[$0.id] ?? FuzzyMatcher.lowercasedChars($0.url) },
             name: { $0.name },
-            secondary: { $0.url },
-            boost: { snapshot.boost(for: $0.id) }
+            boost: { snapshot.boost(for: $0.id, now: now) }
         )
         results = Self.groupedResults(matches, limit: Self.resultLimit)
         DebugLog.write("BookmarkVM.runSearch matched=\(matches.count) results=\(results.count)")
@@ -211,7 +217,13 @@ final class BookmarkViewModel: ObservableObject {
                 }
                 groups[key] = entry
             } else {
-                output.append(Result(kind: .single(bookmark), match: match))
+                output.append(Result(
+                    kind: .single(bookmark),
+                    match: match,
+                    highlightedName: BookmarkRow.highlight(displayName: bookmark.name, matchedIndices: match.matched),
+                    displayName: bookmark.name,
+                    displayURL: bookmark.url
+                ))
             }
         }
 
@@ -224,12 +236,23 @@ final class BookmarkViewModel: ObservableObject {
                     !BookmarkEnv.preferenceOrder.contains(v.env)
                 }
                 let defaultBookmark = ordered.first?.bookmark ?? entry.variants[0].bookmark
+                let displayName = BookmarkEnv.strippedTitle(defaultBookmark.name)
                 output.append(Result(
                     kind: .envGroup(defaultBookmark: defaultBookmark, variants: ordered, templateURL: key),
-                    match: entry.bestMatch
+                    match: entry.bestMatch,
+                    highlightedName: BookmarkRow.highlight(displayName: displayName, matchedIndices: entry.bestMatch.matched),
+                    displayName: displayName,
+                    displayURL: key
                 ))
             } else {
-                output.append(Result(kind: .single(entry.variants[0].bookmark), match: entry.bestMatch))
+                let bookmark = entry.variants[0].bookmark
+                output.append(Result(
+                    kind: .single(bookmark),
+                    match: entry.bestMatch,
+                    highlightedName: BookmarkRow.highlight(displayName: bookmark.name, matchedIndices: entry.bestMatch.matched),
+                    displayName: bookmark.name,
+                    displayURL: bookmark.url
+                ))
             }
         }
 
@@ -366,6 +389,7 @@ final class BookmarkViewModel: ObservableObject {
 
         let imported = (includeZen ? cachedZen : []) + (includeFirefox ? cachedFirefox : [])
         allBookmarks = BookmarkIndex.merged(managed: managed, imported: imported)
+        rebuildBookmarkCharCache()
         FaviconCache.shared.prefetch(bookmarks: allBookmarks)
         if !query.isEmpty { runSearch() }
 
@@ -388,6 +412,7 @@ final class BookmarkViewModel: ObservableObject {
             let firefox = includeFirefox ? FirefoxBookmarkImporter.load() : []
             await MainActor.run {
                 self.allBookmarks = BookmarkIndex.merged(managed: managed, imported: zen + firefox)
+                self.rebuildBookmarkCharCache()
                 FaviconCache.shared.prefetch(bookmarks: self.allBookmarks)
                 if includeZen {
                     self.lastZenMTime = zenMtime
@@ -401,6 +426,19 @@ final class BookmarkViewModel: ObservableObject {
                 if !self.query.isEmpty { self.runSearch() }
             }
         }
+    }
+
+    private func rebuildBookmarkCharCache() {
+        var nameChars: [String: [Character]] = [:]
+        var urlChars: [String: [Character]] = [:]
+        nameChars.reserveCapacity(allBookmarks.count)
+        urlChars.reserveCapacity(allBookmarks.count)
+        for bookmark in allBookmarks {
+            nameChars[bookmark.id] = FuzzyMatcher.lowercasedChars(bookmark.name)
+            urlChars[bookmark.id] = FuzzyMatcher.lowercasedChars(bookmark.url)
+        }
+        bookmarkNameChars = nameChars
+        bookmarkUrlChars = urlChars
     }
 }
 
@@ -436,20 +474,18 @@ struct BookmarkView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(0..<viewModel.results.count, id: \.self) { index in
-                                let result = viewModel.results[index]
+                            ForEach(Array(viewModel.results.enumerated()), id: \.element.id) { index, result in
                                 BookmarkRow(
-                                    displayName: result.displayName,
                                     displayURL: result.displayURL,
                                     source: result.primaryBookmark.source,
-                                    query: viewModel.query,
+                                    highlightedName: result.highlightedName,
                                     selected: index == viewModel.selectedIndex,
                                     icon: faviconCache.icon(for: result.primaryBookmark.url),
                                     missed: result.match.missed,
-                                    hasActions: !BookmarkViewModel.actions(for: result).isEmpty,
+                                    hasActions: BookmarkViewModel.hasActions(for: result),
                                     copyFlashing: viewModel.copyFlashID == "result:\(result.id)"
                                 )
-                                .id(index)
+                                .id(result.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     viewModel.selectedIndex = index
@@ -461,7 +497,9 @@ struct BookmarkView: View {
                     }
                     .frame(maxHeight: 320)
                     .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                        proxy.scrollTo(newIndex)
+                        if viewModel.results.indices.contains(newIndex) {
+                            proxy.scrollTo(viewModel.results[newIndex].id)
+                        }
                     }
                 }
             }
@@ -478,10 +516,9 @@ struct BookmarkView: View {
 }
 
 struct BookmarkRow: View {
-    let displayName: String
     let displayURL: String
     let source: Bookmark.Source
-    let query: String
+    let highlightedName: AttributedString
     let selected: Bool
     let icon: NSImage?
     let missed: Int
@@ -547,9 +584,9 @@ struct BookmarkRow: View {
         .opacity(isApproximate ? 0.55 : 1.0)
     }
 
-    private var highlightedName: AttributedString {
+    static func highlight(displayName: String, matchedIndices: [Int]) -> AttributedString {
         let chars = Array(displayName)
-        let matched = Set(FuzzyMatcher.matchedIndices(query: query, candidate: displayName) ?? [])
+        let matched = Set(matchedIndices)
         var result = AttributedString()
         for (index, char) in chars.enumerated() {
             var piece = AttributedString(String(char))
@@ -622,8 +659,7 @@ struct BookmarkActionsList: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(0..<state.actions.count, id: \.self) { index in
-                            let action = state.actions[index]
+                        ForEach(Array(state.actions.enumerated()), id: \.element.id) { index, action in
                             HStack(spacing: 14) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -655,7 +691,7 @@ struct BookmarkActionsList: View {
                             .padding(.horizontal, 18)
                             .padding(.vertical, 8)
                             .background(index == state.selectedIndex ? Color.accentColor.opacity(0.35) : Color.clear)
-                            .id(index)
+                            .id(action.id)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 var s = state
@@ -668,7 +704,9 @@ struct BookmarkActionsList: View {
                 }
                 .frame(maxHeight: 320)
                 .onChange(of: state.selectedIndex) { _, newIndex in
-                    proxy.scrollTo(newIndex)
+                    if state.actions.indices.contains(newIndex) {
+                        proxy.scrollTo(state.actions[newIndex].id)
+                    }
                 }
             }
         }

@@ -82,14 +82,13 @@ struct SubActionsList: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(0..<items.count, id: \.self) { index in
-                                let item = items[index]
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                                 SubActionRow(
                                     item: item,
                                     selected: index == selectedIndex,
                                     copyFlashing: copyFlashID == "sub:\(item.id)"
                                 )
-                                .id(index)
+                                .id(item.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     onSelect(index)
@@ -100,7 +99,9 @@ struct SubActionsList: View {
                     }
                     .frame(maxHeight: 320)
                     .onChange(of: selectedIndex) { _, newIndex in
-                        proxy.scrollTo(newIndex)
+                        if items.indices.contains(newIndex) {
+                            proxy.scrollTo(items[newIndex].id)
+                        }
                     }
                 }
             }

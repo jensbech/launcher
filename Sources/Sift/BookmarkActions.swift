@@ -76,6 +76,14 @@ enum BookmarkEnv {
 }
 
 enum BookmarkActions {
+    static func hasActions(for bookmark: Bookmark) -> Bool {
+        guard let url = URL(string: bookmark.url),
+              let host = url.host?.lowercased(),
+              host == "github.com" || host.hasSuffix(".github.com") else { return false }
+        let parts = url.path.split(separator: "/")
+        return parts.count >= 2
+    }
+
     static func actions(for bookmark: Bookmark) -> [BookmarkAction] {
         guard let url = URL(string: bookmark.url),
               let host = url.host?.lowercased(),

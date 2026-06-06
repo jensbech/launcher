@@ -17,6 +17,8 @@ final class FaviconCache: ObservableObject {
     private var activeFetches = 0
     private let maxConcurrent = 6
 
+    private let persistQueue = DispatchQueue(label: "sift.faviconcache.persist", qos: .utility)
+
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         cacheDir = base.appendingPathComponent("Sift/favicons")
@@ -29,7 +31,7 @@ final class FaviconCache: ObservableObject {
         config.urlCache = nil
         session = URLSession(configuration: config)
 
-        loadDiskCache()
+        loadDiskCacheAsync()
         if icons[Self.swaggerKey] == nil, let embedded = Self.embeddedSwaggerIcon() {
             icons[Self.swaggerKey] = embedded
             persist(image: embedded, host: Self.swaggerKey)
@@ -158,22 +160,40 @@ final class FaviconCache: ObservableObject {
         return nil
     }
 
-    private func loadDiskCache() {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) else { return }
-        for file in files {
-            let host = file.deletingPathExtension().lastPathComponent
-            if let image = NSImage(contentsOf: file), image.size.width > 1 {
-                icons[host] = image
+    private func loadDiskCacheAsync() {
+        let dir = cacheDir
+        Task.detached(priority: .utility) {
+            guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+            let pairs: [(String, NSImage)] = files.compactMap { file in
+                let host = file.deletingPathExtension().lastPathComponent
+                guard let image = NSImage(contentsOf: file), image.size.width > 1 else { return nil }
+                return (host, image)
+            }
+            guard !pairs.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                var merged = self.icons
+                var changed = false
+                for (host, image) in pairs where merged[host] == nil {
+                    merged[host] = image
+                    changed = true
+                }
+                if changed { self.icons = merged }
             }
         }
     }
 
     private func persist(image: NSImage, host: String) {
-        guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]) else { return }
-        let safe = host.replacingOccurrences(of: "/", with: "_")
-        let url = cacheDir.appendingPathComponent("\(safe).png")
-        try? png.write(to: url)
+        let dir = cacheDir
+        persistQueue.async {
+            autoreleasepool {
+                guard let tiff = image.tiffRepresentation,
+                      let bitmap = NSBitmapImageRep(data: tiff),
+                      let png = bitmap.representation(using: .png, properties: [:]) else { return }
+                let safe = host.replacingOccurrences(of: "/", with: "_")
+                let url = dir.appendingPathComponent("\(safe).png")
+                try? png.write(to: url)
+            }
+        }
     }
 }

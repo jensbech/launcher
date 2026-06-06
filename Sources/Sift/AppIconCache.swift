@@ -6,33 +6,26 @@ import Foundation
 final class AppIconCache {
     static let shared = AppIconCache()
 
-    private var cache: [String: NSImage] = [:]
+    private let cache = NSCache<NSString, NSImage>()
     private let diskQueue = DispatchQueue(label: "sift.appiconcache.disk", qos: .utility)
     private let diskCacheDir: URL?
 
     init() {
         self.diskCacheDir = Self.makeCacheDir()
+        cache.countLimit = 512
     }
 
     func icon(forPath path: String) -> NSImage {
-        if let cached = cache[path] { return cached }
-
-        if let dir = diskCacheDir {
-            let fileURL = dir.appendingPathComponent(Self.cacheKey(forPath: path)).appendingPathExtension("png")
-            if let image = loadFromDiskIfFresh(bundlePath: path, fileURL: fileURL) {
-                cache[path] = image
-                return image
-            }
-        }
-
+        let key = path as NSString
+        if let cached = cache.object(forKey: key) { return cached }
         let icon = NSWorkspace.shared.icon(forFile: path)
-        cache[path] = icon
+        cache.setObject(icon, forKey: key)
         scheduleDiskWrite(image: icon, path: path)
         return icon
     }
 
     func evict(path: String) {
-        cache.removeValue(forKey: path)
+        cache.removeObject(forKey: path as NSString)
     }
 
     private var warmTask: Task<Void, Never>?
@@ -43,30 +36,12 @@ final class AppIconCache {
             for path in paths {
                 if Task.isCancelled { return }
                 guard let self else { return }
-                if self.cache[path] == nil {
+                if self.cache.object(forKey: path as NSString) == nil {
                     _ = self.icon(forPath: path)
                 }
                 try? await Task.sleep(nanoseconds: 4_000_000)
             }
         }
-    }
-
-    private func loadFromDiskIfFresh(bundlePath: String, fileURL: URL) -> NSImage? {
-        let fm = FileManager.default
-        guard let cacheAttrs = try? fm.attributesOfItem(atPath: fileURL.path),
-              let cacheMtime = cacheAttrs[.modificationDate] as? Date
-        else { return nil }
-
-        if let bundleAttrs = try? fm.attributesOfItem(atPath: bundlePath),
-           let bundleMtime = bundleAttrs[.modificationDate] as? Date,
-           bundleMtime > cacheMtime {
-            return nil
-        }
-
-        guard let data = try? Data(contentsOf: fileURL),
-              let image = NSImage(data: data)
-        else { return nil }
-        return image
     }
 
     private func scheduleDiskWrite(image: NSImage, path: String) {

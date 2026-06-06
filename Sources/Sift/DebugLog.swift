@@ -16,14 +16,15 @@ enum DebugLog {
         try? "--- sift start \(Date()) ---\n".data(using: .utf8)?.write(to: URL(fileURLWithPath: path))
     }
 
-    static func write(_ msg: String) {
+    static func write(_ msg: @autoclosure () -> String) {
         guard enabled else { return }
+        let resolved = msg()
         lock.lock(); defer { lock.unlock() }
         if !didReset {
             didReset = true
             try? "--- sift start \(Date()) ---\n".data(using: .utf8)?.write(to: URL(fileURLWithPath: path))
         }
-        let line = "\(Date().timeIntervalSinceReferenceDate) \(msg)\n"
+        let line = "\(Date().timeIntervalSinceReferenceDate) \(resolved)\n"
         guard let data = line.data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: path)) {
             try? handle.seekToEnd()

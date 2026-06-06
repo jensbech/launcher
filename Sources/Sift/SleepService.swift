@@ -47,11 +47,29 @@ final class SleepService {
     }
 
     func refresh() {
-        let output = runShell("/usr/bin/pmset", ["-g"])
-        let disabled = Self.parseDisabled(output: output)
-        let changed = disabled != isDisabled
-        isDisabled = disabled
-        if changed { onStateChange?() }
+        Task.detached(priority: .utility) {
+            let output = SleepService.runShellStatic("/usr/bin/pmset", ["-g"])
+            let disabled = SleepService.parseDisabled(output: output)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let changed = disabled != self.isDisabled
+                self.isDisabled = disabled
+                if changed { self.onStateChange?() }
+            }
+        }
+    }
+
+    nonisolated static func runShellStatic(_ executable: String, _ args: [String]) -> String {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: executable)
+        task.arguments = args
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do { try task.run() } catch { return "" }
+        task.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     @discardableResult
@@ -78,7 +96,7 @@ final class SleepService {
         return false
     }
 
-    private static func parseDisabled(output: String) -> Bool {
+    nonisolated private static func parseDisabled(output: String) -> Bool {
         for line in output.components(separatedBy: "\n") {
             let lower = line.lowercased()
             if lower.contains("sleepdisabled") || lower.contains("disablesleep") {
@@ -86,19 +104,6 @@ final class SleepService {
             }
         }
         return false
-    }
-
-    private func runShell(_ executable: String, _ args: [String]) -> String {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: executable)
-        task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do { try task.run() } catch { return "" }
-        task.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
     }
 
     private func runShellExit(_ executable: String, _ args: [String]) -> Int32 {

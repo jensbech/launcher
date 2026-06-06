@@ -34,6 +34,7 @@ final class SettingsViewModel: ObservableObject {
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
+    private var pendingPersist: DispatchWorkItem?
     private let onHotkeysChanged: () -> Void
     private let onSleepConfigChanged: () -> Void
     private let onStatusStripConfigChanged: (Bool) -> Void
@@ -71,13 +72,19 @@ final class SettingsViewModel: ObservableObject {
         self.audioSwitcherEnabled = config.audioSwitcherEnabled
         self.disabledDeviceIDs = config.disabledDeviceIDs
         self.sleepCommandsEnabled = config.sleepCommandsEnabled
-        self.sudoersConfigured = Self.sudoersRuleAvailable()
+        self.sudoersConfigured = FileManager.default.fileExists(atPath: "/etc/sudoers.d/sift")
         self.screenshotEnabled = config.screenshotEnabled
         self.managedBookmarks = bookmarkStore.load()
         self.apps = []
         Task.detached(priority: .utility) {
             let scanned = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
             await MainActor.run { self.apps = scanned }
+        }
+        if !self.sudoersConfigured {
+            Task.detached(priority: .utility) {
+                let available = SettingsViewModel.sudoersRuleAvailable()
+                await MainActor.run { [weak self] in self?.sudoersConfigured = available }
+            }
         }
     }
 
@@ -113,10 +120,17 @@ final class SettingsViewModel: ObservableObject {
     }
 
     func refreshSudoersStatus() {
-        sudoersConfigured = Self.sudoersRuleAvailable()
+        if FileManager.default.fileExists(atPath: "/etc/sudoers.d/sift") {
+            sudoersConfigured = true
+            return
+        }
+        Task.detached(priority: .utility) {
+            let available = SettingsViewModel.sudoersRuleAvailable()
+            await MainActor.run { [weak self] in self?.sudoersConfigured = available }
+        }
     }
 
-    private static func sudoersRuleAvailable() -> Bool {
+    nonisolated static func sudoersRuleAvailable() -> Bool {
         if FileManager.default.fileExists(atPath: "/etc/sudoers.d/sift") {
             return true
         }
@@ -151,8 +165,6 @@ final class SettingsViewModel: ObservableObject {
         guard !filter.isEmpty else { return apps }
         return apps.filter { $0.name.localizedCaseInsensitiveContains(filter) }
     }
-
-    var enabledCount: Int { apps.count - disabled.filter { id in apps.contains { $0.id == id } }.count }
 
     func isEnabled(_ item: AppItem) -> Bool { !disabled.contains(item.id) }
 
@@ -208,7 +220,7 @@ final class SettingsViewModel: ObservableObject {
 
     func setBackdropIntensity(_ value: Double) {
         backdropIntensity = max(0, min(1, value))
-        persist()
+        persistDebounced()
     }
 
     func setPsychedelicEnabled(_ value: Bool) {
@@ -218,7 +230,7 @@ final class SettingsViewModel: ObservableObject {
 
     func setPsychedelicIntensity(_ value: Double) {
         psychedelicIntensity = max(0, min(1, value))
-        persist()
+        persistDebounced()
     }
 
     func setPsychedelicEffectEnabled(_ key: String, enabled: Bool) {
@@ -279,7 +291,16 @@ final class SettingsViewModel: ObservableObject {
         persistBookmarks()
     }
 
+    private func persistDebounced() {
+        pendingPersist?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.persist() }
+        pendingPersist = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+    }
+
     private func persist() {
+        pendingPersist?.cancel()
+        pendingPersist = nil
         store.save(Config(
             disabledBundleIDs: disabled,
             launchAtLogin: launchAtLogin,
@@ -355,7 +376,7 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Sidebar(section: $section, viewModel: viewModel)
+            Sidebar(section: $section)
                 .frame(width: 220)
 
             Rectangle()
@@ -398,7 +419,6 @@ private struct SettingsBackdrop: View {
 
 private struct Sidebar: View {
     @Binding var section: SettingsSection
-    @ObservedObject var viewModel: SettingsViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -420,7 +440,7 @@ private struct Sidebar: View {
 
             Spacer()
 
-            Footer(viewModel: viewModel)
+            Footer()
                 .padding(.horizontal, 22)
                 .padding(.bottom, 22)
         }
@@ -490,8 +510,6 @@ private struct SidebarRow: View {
 }
 
 private struct Footer: View {
-    @ObservedObject var viewModel: SettingsViewModel
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Rectangle()
@@ -661,8 +679,9 @@ private struct AppsPane: View {
     @ObservedObject var viewModel: SettingsViewModel
 
     var body: some View {
+        let filtered = viewModel.filtered
         VStack(alignment: .leading, spacing: 16) {
-            Card(title: "FILTER", caption: "\(viewModel.filtered.count) of \(viewModel.apps.count)") {
+            Card(title: "FILTER", caption: "\(filtered.count) of \(viewModel.apps.count)") {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12, weight: .medium))
@@ -695,13 +714,17 @@ private struct AppsPane: View {
             }
 
             Card(title: "SEARCHABLE") {
-                if viewModel.filtered.isEmpty {
+                if filtered.isEmpty {
                     EmptyState(icon: "magnifyingglass", text: "No matches.")
                 } else {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(viewModel.filtered.enumerated()), id: \.element.id) { idx, item in
-                            AppRow(item: item, viewModel: viewModel)
-                            if idx < viewModel.filtered.count - 1 {
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { idx, item in
+                            AppRow(
+                                item: item,
+                                isEnabled: viewModel.isEnabled(item),
+                                onToggle: { viewModel.toggle(item) }
+                            )
+                            if idx < filtered.count - 1 {
                                 Rectangle()
                                     .fill(Palette.hairline)
                                     .frame(height: 1)
@@ -718,7 +741,8 @@ private struct AppsPane: View {
 
 private struct AppRow: View {
     let item: AppItem
-    @ObservedObject var viewModel: SettingsViewModel
+    let isEnabled: Bool
+    let onToggle: () -> Void
     @State private var hover = false
 
     var body: some View {
@@ -728,11 +752,11 @@ private struct AppRow: View {
                 .frame(width: 22, height: 22)
             Text(item.name)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(viewModel.isEnabled(item) ? 0.95 : 0.45))
+                .foregroundStyle(.white.opacity(isEnabled ? 0.95 : 0.45))
             Spacer()
             Toggle("", isOn: Binding(
-                get: { viewModel.isEnabled(item) },
-                set: { _ in viewModel.toggle(item) }
+                get: { isEnabled },
+                set: { _ in onToggle() }
             ))
             .toggleStyle(.switch)
             .labelsHidden()
@@ -1176,7 +1200,7 @@ private struct PsychedelicPreviewChip: View {
     private static let lineCount = 7
 
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             ZStack {
                 Color.black

@@ -16,9 +16,15 @@ public struct FuzzyMatch: Equatable, Sendable {
 }
 
 public struct FuzzyMatcher {
+    public static func lowercasedChars(_ s: String) -> [Character] {
+        Array(s.lowercased())
+    }
+
     public static func match(query: String, candidate: String) -> FuzzyMatch? {
-        let q = Array(query.lowercased())
-        let c = Array(candidate.lowercased())
+        match(queryChars: Array(query.lowercased()), candidateChars: Array(candidate.lowercased()))
+    }
+
+    public static func match(queryChars q: [Character], candidateChars c: [Character]) -> FuzzyMatch? {
         guard !q.isEmpty else { return nil }
 
         let allowedMiss = allowedMissCount(forQueryLength: q.count)
@@ -143,6 +149,56 @@ public struct FuzzyMatcher {
                         matchedInName.formUnion(m.matched)
                     } else if !secondaryText.isEmpty,
                               let m = match(query: token, candidate: secondaryText) {
+                        totalScore += m.score / 3 - 4
+                        totalMissed += m.missed
+                    } else {
+                        return nil
+                    }
+                }
+
+                return (item, FuzzyMatch(
+                    score: totalScore + boost(item),
+                    matched: matchedInName.sorted(),
+                    missed: totalMissed
+                ))
+            }
+            .sorted { a, b in
+                if a.1.missed != b.1.missed { return a.1.missed < b.1.missed }
+                if a.1.score != b.1.score { return a.1.score > b.1.score }
+                return name(a.0).localizedCaseInsensitiveCompare(name(b.0)) == .orderedAscending
+            }
+    }
+
+    public static func searchPrecomputed<Item>(
+        _ query: String,
+        in items: [Item],
+        nameChars: (Item) -> [Character],
+        secondaryChars: ((Item) -> [Character])? = nil,
+        name: (Item) -> String,
+        boost: (Item) -> Int = { _ in 0 }
+    ) -> [(Item, FuzzyMatch)] {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return [] }
+        let tokenChars: [[Character]] = trimmed
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { Array(String($0).lowercased()) }
+
+        return items
+            .compactMap { item -> (Item, FuzzyMatch)? in
+                let primary = nameChars(item)
+                let secondaryText = secondaryChars?(item) ?? []
+
+                var matchedInName = Set<Int>()
+                var totalScore = 0
+                var totalMissed = 0
+
+                for token in tokenChars {
+                    if let m = match(queryChars: token, candidateChars: primary) {
+                        totalScore += m.score
+                        totalMissed += m.missed
+                        matchedInName.formUnion(m.matched)
+                    } else if !secondaryText.isEmpty,
+                              let m = match(queryChars: token, candidateChars: secondaryText) {
                         totalScore += m.score / 3 - 4
                         totalMissed += m.missed
                     } else {
