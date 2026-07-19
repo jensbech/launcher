@@ -56,6 +56,12 @@ final class SiftController {
         viewModel.reload()
         _ = panel.contentViewController?.view
         panel.contentView?.layoutSubtreeIfNeeded()
+        if let hostingView = panel.contentViewController?.view {
+            let fitting = hostingView.fittingSize
+            if fitting.width > 0, fitting.height > 0, fitting != panel.frame.size {
+                panel.setContentSize(fitting)
+            }
+        }
         let config = store.load()
         let screen = PanelPlacement.activeScreen()
         if let screen, config.backdropEnabled {
