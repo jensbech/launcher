@@ -31,6 +31,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var sleepCommandsEnabled: Bool = false
     @Published var sudoersConfigured: Bool = false
     @Published var screenshotEnabled: Bool = false
+    @Published var themeMode: ThemeMode = .dark
 
     private let store: Store
     private let bookmarkStore: BookmarkStore
@@ -74,6 +75,7 @@ final class SettingsViewModel: ObservableObject {
         self.sleepCommandsEnabled = config.sleepCommandsEnabled
         self.sudoersConfigured = FileManager.default.fileExists(atPath: "/etc/sudoers.d/sift")
         self.screenshotEnabled = config.screenshotEnabled
+        self.themeMode = config.themeMode
         self.managedBookmarks = bookmarkStore.load()
         self.apps = []
         Task.detached(priority: .utility) { [weak self] in
@@ -116,6 +118,12 @@ final class SettingsViewModel: ObservableObject {
 
     func setScreenshotEnabled(_ value: Bool) {
         screenshotEnabled = value
+        persist()
+    }
+
+    func setThemeMode(_ value: ThemeMode) {
+        themeMode = value
+        ThemeManager.apply(value)
         persist()
     }
 
@@ -321,7 +329,8 @@ final class SettingsViewModel: ObservableObject {
             statusStripEnabled: statusStripEnabled,
             disabledDeviceIDs: disabledDeviceIDs,
             sleepCommandsEnabled: sleepCommandsEnabled,
-            screenshotEnabled: screenshotEnabled
+            screenshotEnabled: screenshotEnabled,
+            themeMode: themeMode
         ))
     }
 
@@ -361,13 +370,13 @@ private enum SettingsSection: Int, CaseIterable, Identifiable {
 }
 
 private enum Palette {
-    static let surface = Color.black.opacity(0.18)
-    static let card = Color.white.opacity(0.045)
-    static let cardStroke = Color.white.opacity(0.07)
-    static let hairline = Color.white.opacity(0.08)
-    static let subtle = Color.white.opacity(0.55)
-    static let muted = Color.white.opacity(0.42)
-    static let dim = Color.white.opacity(0.28)
+    static let surface = Color.veil(0.18)
+    static let card = Color.ink(0.045)
+    static let cardStroke = Color.ink(0.07)
+    static let hairline = Color.ink(0.08)
+    static let subtle = Color.ink(0.55)
+    static let muted = Color.ink(0.42)
+    static let dim = Color.ink(0.28)
 }
 
 struct SettingsView: View {
@@ -388,7 +397,6 @@ struct SettingsView: View {
         }
         .frame(width: 820, height: 640)
         .background(SettingsBackdrop())
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -398,8 +406,8 @@ private struct SettingsBackdrop: View {
             VisualEffectBackground()
             LinearGradient(
                 colors: [
-                    Color.black.opacity(0.55),
-                    Color.black.opacity(0.30)
+                    Color.veil(0.55),
+                    Color.veil(0.30)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -459,11 +467,11 @@ private struct BrandHeader: View {
                 Text("SIFT")
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .tracking(2.4)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.ink(1))
             }
             Text("Settings")
                 .font(.system(size: 26, weight: .semibold, design: .serif))
-                .foregroundStyle(.white.opacity(0.95))
+                .foregroundStyle(Color.ink(0.95))
                 .italic()
         }
     }
@@ -490,7 +498,7 @@ private struct SidebarRow: View {
 
                 Text(item.title)
                     .font(.system(size: 13.5, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? .white : Palette.subtle)
+                    .foregroundStyle(selected ? Color.ink(1) : Palette.subtle)
 
                 Spacer()
             }
@@ -498,7 +506,7 @@ private struct SidebarRow: View {
             .padding(.trailing, 10)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(selected ? Color.white.opacity(0.05) : (hover ? Color.white.opacity(0.03) : .clear))
+                    .fill(selected ? Color.ink(0.05) : (hover ? Color.ink(0.03) : .clear))
             )
             .contentShape(Rectangle())
         }
@@ -594,7 +602,7 @@ private struct PaneHeader: View {
 
             Text(section.title)
                 .font(.system(size: 30, weight: .semibold, design: .serif))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.ink(1))
 
             Text(section.subtitle)
                 .font(.system(size: 13))
@@ -658,7 +666,7 @@ private struct ToggleRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13.5, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.ink(1))
                 if let description {
                     Text(description)
                         .font(.system(size: 11.5))
@@ -689,7 +697,7 @@ private struct AppsPane: View {
                     TextField("Type to filter applications", text: $viewModel.filter)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.ink(1))
                     if !viewModel.filter.isEmpty {
                         Button {
                             viewModel.filter = ""
@@ -705,7 +713,7 @@ private struct AppsPane: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.black.opacity(0.25))
+                        .fill(Color.veil(0.25))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -752,7 +760,7 @@ private struct AppRow: View {
                 .frame(width: 22, height: 22)
             Text(item.name)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(isEnabled ? 0.95 : 0.45))
+                .foregroundStyle(Color.ink(isEnabled ? 0.95 : 0.45))
             Spacer()
             Toggle("", isOn: Binding(
                 get: { isEnabled },
@@ -766,7 +774,7 @@ private struct AppRow: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(hover ? Color.white.opacity(0.03) : .clear)
+                .fill(hover ? Color.ink(0.03) : .clear)
         )
         .contentShape(Rectangle())
         .onHover { hover = $0 }
@@ -813,12 +821,12 @@ private struct BookmarksPane: View {
                                 Text("Add")
                                     .font(.system(size: 12, weight: .medium))
                             }
-                            .foregroundStyle(.white)
+                            .foregroundStyle(addDisabled ? Color.ink(0.6) : .white)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 9)
                             .background(
                                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(addDisabled ? Color.white.opacity(0.06) : Color.accentColor)
+                                    .fill(addDisabled ? Color.ink(0.06) : Color.accentColor)
                             )
                             .opacity(addDisabled ? 0.55 : 1)
                         }
@@ -870,12 +878,12 @@ private struct BookmarkField: View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .font(.system(size: 13))
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.ink(1))
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.black.opacity(0.25))
+                    .fill(Color.veil(0.25))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -895,7 +903,7 @@ private struct SettingsBookmarkRow: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(Color.ink(0.05))
                     .frame(width: 22, height: 22)
                 Image(systemName: "globe")
                     .font(.system(size: 11, weight: .medium))
@@ -904,7 +912,7 @@ private struct SettingsBookmarkRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(bookmark.name)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(Color.ink(0.95))
                 Text(bookmark.url)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Palette.muted)
@@ -953,6 +961,10 @@ private struct GeneralPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Card(title: "APPEARANCE", caption: viewModel.themeMode.rawValue.uppercased()) {
+                ThemeModeRow(viewModel: viewModel)
+            }
+
             Card(title: "STARTUP") {
                 ToggleRow(
                     title: "Launch at login",
@@ -1047,6 +1059,55 @@ private struct GeneralPane: View {
     }
 }
 
+private struct ThemeModeRow: View {
+    @ObservedObject var viewModel: SettingsViewModel
+
+    private static let options: [(mode: ThemeMode, label: String, icon: String, hint: String)] = [
+        (.auto, "Auto", "circle.lefthalf.filled", "Follows the system appearance."),
+        (.light, "Light", "sun.max", "Always light."),
+        (.dark, "Dark", "moon", "Always dark."),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ForEach(Self.options, id: \.mode) { option in
+                    let selected = viewModel.themeMode == option.mode
+                    Button {
+                        viewModel.setThemeMode(option.mode)
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: option.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(selected ? Color.accentColor : Palette.muted)
+                            Text(option.label)
+                                .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                                .foregroundStyle(selected ? Color.ink(1) : Palette.subtle)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.ink(selected ? 0.08 : 0.02))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(selected ? Color.accentColor.opacity(0.7) : Palette.hairline, lineWidth: 1)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            Text(Self.options.first(where: { $0.mode == viewModel.themeMode })?.hint ?? "")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.subtle)
+        }
+        .animation(.easeOut(duration: 0.15), value: viewModel.themeMode)
+    }
+}
+
 private struct PsychedelicToggleRow: View {
     @ObservedObject var viewModel: SettingsViewModel
 
@@ -1058,7 +1119,7 @@ private struct PsychedelicToggleRow: View {
                 HStack(spacing: 6) {
                     Text("Psychedelic mode")
                         .font(.system(size: 13.5, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.ink(1))
                     Text("RANDOM")
                         .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                         .tracking(1.0)
@@ -1104,13 +1165,13 @@ private struct PsychedelicIntensityRow: View {
                 Spacer()
                 Text("\(Int(viewModel.psychedelicIntensity * 100))%")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.ink(1))
                     .monospacedDigit()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(Color.ink(0.06))
                     )
             }
 
@@ -1148,13 +1209,13 @@ private struct PsychedelicEffectsRow: View {
                 Spacer()
                 Text("\(PsychedelicEffect.allCases.count - viewModel.disabledPsychedelicEffects.count)/\(PsychedelicEffect.allCases.count)")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.ink(1))
                     .monospacedDigit()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(Color.ink(0.06))
                     )
             }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
@@ -1169,18 +1230,18 @@ private struct PsychedelicEffectsRow: View {
                                 .foregroundStyle(enabled ? Color.accentColor : Palette.dim)
                             Text(effect.displayName)
                                 .font(.system(size: 12))
-                                .foregroundStyle(enabled ? .white : Palette.subtle)
+                                .foregroundStyle(enabled ? Color.ink(1) : Palette.subtle)
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.white.opacity(enabled ? 0.05 : 0.02))
+                                .fill(Color.ink(enabled ? 0.05 : 0.02))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color.white.opacity(enabled ? 0.08 : 0.04), lineWidth: 1)
+                                .stroke(Color.ink(enabled ? 0.08 : 0.04), lineWidth: 1)
                         )
                         .contentShape(Rectangle())
                     }
@@ -1230,7 +1291,7 @@ private struct PsychedelicPreviewChip: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                .stroke(Color.ink(0.18), lineWidth: 1)
         )
     }
 }
@@ -1248,13 +1309,13 @@ private struct IntensityRow: View {
                 Spacer()
                 Text("\(Int(viewModel.backdropIntensity * 100))%")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.ink(1))
                     .monospacedDigit()
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(Color.ink(0.06))
                     )
             }
 
@@ -1372,8 +1433,8 @@ private struct PositionPicker: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.06),
-                                Color.white.opacity(0.02)
+                                Color.ink(0.06),
+                                Color.ink(0.02)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1383,7 +1444,7 @@ private struct PositionPicker: View {
                     .stroke(Palette.hairline, lineWidth: 1)
 
                 ScreenGuides()
-                    .stroke(Color.white.opacity(0.05), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                    .stroke(Color.ink(0.05), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
                     .padding(14)
 
                 MenuBarMock()
@@ -1442,12 +1503,12 @@ private struct ScreenGuides: Shape {
 private struct MenuBarMock: View {
     var body: some View {
         HStack(spacing: 4) {
-            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
-            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.ink(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.ink(0.22)).frame(width: 4, height: 4)
             Spacer()
-            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
-            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
-            Circle().fill(Color.white.opacity(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.ink(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.ink(0.22)).frame(width: 4, height: 4)
+            Circle().fill(Color.ink(0.22)).frame(width: 4, height: 4)
         }
         .padding(.horizontal, 8)
     }
@@ -1468,9 +1529,9 @@ private struct MiniSiftPanel: View {
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 7, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(Color.ink(0.7))
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white.opacity(0.22))
+                        .fill(Color.ink(0.22))
                         .frame(height: 4)
                     Spacer(minLength: 0)
                 }
@@ -1561,12 +1622,12 @@ private struct DevicesPane: View {
                             Text("Refresh")
                                 .font(.system(size: 11.5, weight: .medium))
                         }
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(Color.ink(0.8))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.white.opacity(0.05))
+                                .fill(Color.ink(0.05))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -1620,16 +1681,16 @@ private struct DevicePickerRow: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(device.isActive ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.06))
+                    .fill(device.isActive ? Color.accentColor.opacity(0.22) : Color.ink(0.06))
                     .frame(width: 32, height: 32)
                 Image(systemName: device.category.systemImageName)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(device.isActive ? Color.accentColor : .white.opacity(0.75))
+                    .foregroundStyle(device.isActive ? Color.accentColor : Color.ink(0.75))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(device.name)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(viewModel.isDeviceEnabled(device) ? 0.95 : 0.5))
+                    .foregroundStyle(Color.ink(viewModel.isDeviceEnabled(device) ? 0.95 : 0.5))
                 Text(device.isActive ? "Connected" : "Not connected")
                     .font(.system(size: 10.5))
                     .foregroundStyle(device.isActive ? Color.accentColor.opacity(0.9) : Palette.muted)
@@ -1647,7 +1708,7 @@ private struct DevicePickerRow: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(hover ? Color.white.opacity(0.03) : .clear)
+                .fill(hover ? Color.ink(0.03) : .clear)
         )
         .contentShape(Rectangle())
         .onHover { hover = $0 }
@@ -1673,7 +1734,7 @@ private struct SudoersStatusRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Sudoers rule")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.ink(1))
                     Text(viewModel.sudoersConfigured
                         ? "/etc/sudoers.d/sift is installed — toggling works without a password prompt."
                         : "Not installed. Sift can't toggle sleep until the rule is created.")
@@ -1731,7 +1792,7 @@ private struct CopyableCommand: View {
             HStack(alignment: .top, spacing: 10) {
                 Text(command)
                     .font(.system(size: 11.5, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(Color.ink(0.9))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1752,12 +1813,12 @@ private struct CopyableCommand: View {
                     }
                     .foregroundStyle(justCopied
                         ? Color(red: 0.4, green: 0.85, blue: 0.55)
-                        : .white.opacity(0.85))
+                        : Color.ink(0.85))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(Color.ink(0.06))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -1769,7 +1830,7 @@ private struct CopyableCommand: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.black.opacity(0.28))
+                    .fill(Color.veil(0.28))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1791,7 +1852,7 @@ private struct GridDot: View {
             ZStack {
                 Color.clear
                 Circle()
-                    .fill(selected ? Color.accentColor : (hover ? Color.white.opacity(0.55) : Color.white.opacity(0.22)))
+                    .fill(selected ? Color.accentColor : (hover ? Color.ink(0.55) : Color.ink(0.22)))
                     .frame(width: selected ? 7 : (hover ? 5 : 3),
                            height: selected ? 7 : (hover ? 5 : 3))
                     .shadow(color: selected ? Color.accentColor.opacity(0.6) : .clear, radius: 4)
@@ -1863,12 +1924,12 @@ private struct ShortcutsPane: View {
                         Text("Reset to defaults")
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(Color.ink(0.8))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                     .background(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.white.opacity(0.05))
+                            .fill(Color.ink(0.05))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1904,7 +1965,7 @@ private struct ShortcutRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(label)
                     .font(.system(size: 13.5, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color.ink(1))
                 Text(sublabel)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Palette.subtle)
@@ -1935,7 +1996,7 @@ private struct KeyRecorder: View {
                     } else {
                         Text(hotkey.displayString())
                             .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.ink(1))
                             .tracking(0.5)
                     }
                 }
@@ -1944,7 +2005,7 @@ private struct KeyRecorder: View {
                 .frame(minWidth: 138)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(recording ? Color.accentColor.opacity(0.14) : Color.black.opacity(0.28))
+                        .fill(recording ? Color.accentColor.opacity(0.14) : Color.veil(0.28))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)

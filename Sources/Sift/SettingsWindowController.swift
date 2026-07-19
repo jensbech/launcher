@@ -43,7 +43,6 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             win.titleVisibility = .hidden
             win.isMovableByWindowBackground = true
             win.backgroundColor = .clear
-            win.appearance = NSAppearance(named: .darkAqua)
             win.isReleasedWhenClosed = false
             win.delegate = self
             window = win

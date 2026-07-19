@@ -509,7 +509,7 @@ struct BookmarkView: View {
         .background(
             ZStack {
                 VisualEffectBackground()
-                Color.black.opacity(0.62)
+                Color.veil(0.62)
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

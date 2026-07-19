@@ -896,7 +896,7 @@ struct SiftView: View {
         .background(
             ZStack {
                 VisualEffectBackground()
-                Color.black.opacity(0.62)
+                Color.veil(0.62)
             }
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -915,17 +915,17 @@ private struct DeviceStatusStrip: View {
                 HStack(spacing: 7) {
                     Image(systemName: device.category.systemImageName)
                         .font(.system(size: 11))
-                        .foregroundStyle(.white.opacity(0.88))
+                        .foregroundStyle(Color.ink(0.88))
                     Text(device.name)
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(Color.ink(0.92))
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(Color.ink(0.06))
                 )
             }
             SourcePillsRow(nowPlaying: nowPlaying, source: source)
@@ -950,19 +950,19 @@ private struct SourcePillsRow: View {
                 HStack(spacing: 6) {
                     Image(systemName: "music.note")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Color.ink(0.55))
                     Text(info.title)
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(Color.ink(0.92))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if let artist = info.artist {
                         Text("·")
                             .font(.system(size: 11.5))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(Color.ink(0.4))
                         Text(artist)
                             .font(.system(size: 11.5))
-                            .foregroundStyle(.white.opacity(0.65))
+                            .foregroundStyle(Color.ink(0.65))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
@@ -971,10 +971,10 @@ private struct SourcePillsRow: View {
                 HStack(spacing: 6) {
                     Image(systemName: "music.note")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Color.ink(0.55))
                     Text(source.name)
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(Color.ink(0.85))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -999,11 +999,11 @@ private struct SourcePill: View {
             } else {
                 Image(systemName: "speaker.wave.2.fill")
                     .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(Color.ink(0.85))
             }
             Text(source.name)
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(Color.ink(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -1011,7 +1011,7 @@ private struct SourcePill: View {
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.ink(0.06))
         )
     }
 }
@@ -1041,7 +1041,7 @@ private struct AudioVisualizer: View {
             } else {
                 Image(systemName: "waveform.slash")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(Color.ink(0.45))
                     .help(lastError ?? "Audio tap unavailable")
             }
         }
@@ -1089,11 +1089,11 @@ struct ResultRow: View {
         case .device(let device, _):
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(device.isActive ? Color.accentColor.opacity(0.22) : Color.white.opacity(0.07))
+                    .fill(device.isActive ? Color.accentColor.opacity(0.22) : Color.ink(0.07))
                     .frame(width: 32, height: 32)
                 Image(systemName: device.category.systemImageName)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(device.isActive ? Color.accentColor : .white.opacity(0.75))
+                    .foregroundStyle(device.isActive ? Color.accentColor : Color.ink(0.75))
             }
         case .sleep(let cmd, _):
             ZStack {
@@ -1118,11 +1118,11 @@ struct ResultRow: View {
         case .systemInfo(let cmd, _):
             ZStack {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.white.opacity(0.07))
+                    .fill(Color.ink(0.07))
                     .frame(width: 32, height: 32)
                 Image(systemName: cmd.systemImage)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(Color.ink(0.85))
             }
         }
     }
@@ -1154,7 +1154,7 @@ struct ResultRow: View {
                 Text(device.actionLabel.uppercased())
                     .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                     .tracking(1.4)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Color.ink(0.7))
             }
         case .sleep:
             Text("SYSTEM")
@@ -1186,7 +1186,7 @@ struct ResultRow: View {
             if let value = cmd.trailingValue {
                 Text(value)
                     .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(Color.ink(0.8))
                     .lineLimit(1)
             }
         }
@@ -1336,7 +1336,7 @@ private struct BookmarkLeadingIcon: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.white.opacity(0.07))
+                .fill(Color.ink(0.07))
                 .frame(width: 32, height: 32)
             if let icon = faviconCache.icon(for: url) {
                 Image(nsImage: icon)
@@ -1345,7 +1345,7 @@ private struct BookmarkLeadingIcon: View {
             } else {
                 Image(systemName: "globe")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(Color.ink(0.75))
             }
         }
         .onAppear { faviconCache.requestIcon(for: url) }
@@ -1363,7 +1363,7 @@ private struct SiftLogoButton: View {
             onTap()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { press = false }
         } label: {
-            SiftMark(size: 20, color: .white.opacity(hover ? 1 : 0.92))
+            SiftMark(size: 20, color: Color.ink(hover ? 1 : 0.92))
                 .scaleEffect(press ? 0.82 : (hover ? 1.1 : 1.0))
                 .rotationEffect(.degrees(press ? 18 : 0))
                 .contentShape(Rectangle())
@@ -1387,12 +1387,12 @@ private struct ScreenshotButton: View {
         } label: {
             Image(systemName: "selection.pin.in.out")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(hover ? 0.85 : 0.55))
+                .foregroundStyle(Color.ink(hover ? 0.85 : 0.55))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(hover ? Color.white.opacity(0.08) : .clear)
+                        .fill(hover ? Color.ink(0.08) : .clear)
                 )
                 .contentShape(Rectangle())
         }
@@ -1419,7 +1419,7 @@ private struct SleepEyeButton: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(sleepDisabled
                     ? Self.yellow
-                    : Color.white.opacity(hover ? 0.55 : 0.32))
+                    : Color.ink(hover ? 0.55 : 0.32))
                 .shadow(color: sleepDisabled
                     ? Self.yellow.opacity(0.5)
                     : .clear, radius: 3)
@@ -1427,7 +1427,7 @@ private struct SleepEyeButton: View {
                 .padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(hover ? Color.white.opacity(0.06) : .clear)
+                        .fill(hover ? Color.ink(0.06) : .clear)
                 )
                 .contentShape(Rectangle())
         }

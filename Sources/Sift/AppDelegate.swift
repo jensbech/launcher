@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DebugLog.reset()
         DebugLog.write("AppDelegate.didFinishLaunching")
         store = Store()
+        ThemeManager.apply(store.load().themeMode)
         let bookmarkStore = BookmarkStore()
         launcher = SiftController(store: store, onOpenSettings: { [weak self] in
             self?.settings.show()

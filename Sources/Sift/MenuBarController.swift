@@ -39,7 +39,6 @@ final class MenuBarController: NSObject {
 
         popover.behavior = .transient
         popover.animates = true
-        popover.appearance = NSAppearance(named: .darkAqua)
         let view = StatusMenuView(
             onSettings: { [weak self] in
                 self?.close()
@@ -106,7 +105,7 @@ private struct StatusMenuView: View {
             Header()
 
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Color.ink(0.08))
                 .frame(height: 1)
 
             VStack(spacing: 2) {
@@ -130,7 +129,7 @@ private struct StatusMenuView: View {
         .frame(width: StatusMenuView.size.width, height: StatusMenuView.size.height)
         .background(
             ZStack {
-                Color.black.opacity(0.18)
+                Color.veil(0.18)
                 LinearGradient(
                     colors: [
                         Color.white.opacity(0.04),
@@ -159,7 +158,7 @@ private struct Header: View {
             Text("SIFT")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .tracking(2.6)
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(Color.ink(0.92))
 
             Spacer()
 
@@ -179,16 +178,16 @@ private struct ShortcutChip: View {
     var body: some View {
         Text(text)
             .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundStyle(.white.opacity(0.55))
+            .foregroundStyle(Color.ink(0.55))
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
+                    .fill(Color.ink(0.05))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                    .stroke(Color.ink(0.1), lineWidth: 1)
             )
     }
 }
@@ -206,15 +205,15 @@ private struct MenuRow: View {
             HStack(spacing: 11) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(hover ? accent.opacity(0.22) : Color.white.opacity(0.05))
+                        .fill(hover ? accent.opacity(0.22) : Color.ink(0.05))
                         .frame(width: 24, height: 24)
                     Image(systemName: icon)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(hover ? accent : Color.white.opacity(0.7))
+                        .foregroundStyle(hover ? accent : Color.ink(0.7))
                 }
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(hover ? 1 : 0.88))
+                    .foregroundStyle(Color.ink(hover ? 1 : 0.88))
                 Spacer()
                 HStack(spacing: 3) {
                     ForEach(shortcut, id: \.self) { key in
@@ -227,7 +226,7 @@ private struct MenuRow: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hover ? Color.white.opacity(0.06) : .clear)
+                    .fill(hover ? Color.ink(0.06) : .clear)
             )
             .contentShape(Rectangle())
         }

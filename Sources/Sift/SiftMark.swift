@@ -3,7 +3,7 @@ import AppKit
 
 struct SiftMark: View {
     var size: CGFloat = 18
-    var color: Color = .white.opacity(0.92)
+    var color: Color = .ink(0.92)
 
     var body: some View {
         Canvas { ctx, sz in

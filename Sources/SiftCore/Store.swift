@@ -129,6 +129,12 @@ public struct Hotkey: Codable, Equatable, Hashable, Sendable {
     ]
 }
 
+public enum ThemeMode: String, Codable, CaseIterable, Sendable {
+    case auto
+    case light
+    case dark
+}
+
 public struct Config: Codable, Equatable {
     public var disabledBundleIDs: Set<String>
     public var launchAtLogin: Bool
@@ -150,6 +156,7 @@ public struct Config: Codable, Equatable {
     public var disabledDeviceIDs: Set<String>
     public var sleepCommandsEnabled: Bool
     public var screenshotEnabled: Bool
+    public var themeMode: ThemeMode
 
     public static let defaultBackdropIntensity: Double = 0.6
     public static let defaultPsychedelicIntensity: Double = 0.7
@@ -174,7 +181,8 @@ public struct Config: Codable, Equatable {
         statusStripEnabled: Bool = false,
         disabledDeviceIDs: Set<String> = [],
         sleepCommandsEnabled: Bool = false,
-        screenshotEnabled: Bool = false
+        screenshotEnabled: Bool = false,
+        themeMode: ThemeMode = .dark
     ) {
         self.disabledBundleIDs = disabledBundleIDs
         self.launchAtLogin = launchAtLogin
@@ -196,6 +204,7 @@ public struct Config: Codable, Equatable {
         self.disabledDeviceIDs = disabledDeviceIDs
         self.sleepCommandsEnabled = sleepCommandsEnabled
         self.screenshotEnabled = screenshotEnabled
+        self.themeMode = themeMode
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -219,6 +228,7 @@ public struct Config: Codable, Equatable {
         case disabledDeviceIDs
         case sleepCommandsEnabled
         case screenshotEnabled
+        case themeMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -245,6 +255,7 @@ public struct Config: Codable, Equatable {
         self.disabledDeviceIDs = try container.decodeIfPresent(Set<String>.self, forKey: .disabledDeviceIDs) ?? []
         self.sleepCommandsEnabled = try container.decodeIfPresent(Bool.self, forKey: .sleepCommandsEnabled) ?? false
         self.screenshotEnabled = try container.decodeIfPresent(Bool.self, forKey: .screenshotEnabled) ?? false
+        self.themeMode = try container.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? .dark
     }
 
     public func panelPosition(forScreenName name: String?) -> PanelPosition {
