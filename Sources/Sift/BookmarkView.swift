@@ -405,12 +405,13 @@ final class BookmarkViewModel: ObservableObject {
         guard (needsZenReload || needsFirefoxReload), !refreshing else { return }
         refreshing = true
 
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
             let zenMtime = includeZen ? ZenBookmarkImporter.modificationTime() : nil
             let zen = includeZen ? ZenBookmarkImporter.load() : []
             let firefoxMtime = includeFirefox ? FirefoxBookmarkImporter.modificationTime() : nil
             let firefox = includeFirefox ? FirefoxBookmarkImporter.load() : []
-            await MainActor.run {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 self.allBookmarks = BookmarkIndex.merged(managed: managed, imported: zen + firefox)
                 self.rebuildBookmarkCharCache()
                 FaviconCache.shared.prefetch(bookmarks: self.allBookmarks)

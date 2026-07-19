@@ -76,9 +76,9 @@ final class SettingsViewModel: ObservableObject {
         self.screenshotEnabled = config.screenshotEnabled
         self.managedBookmarks = bookmarkStore.load()
         self.apps = []
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .utility) { [weak self] in
             let scanned = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
-            await MainActor.run { self.apps = scanned }
+            await MainActor.run { [weak self] in self?.apps = scanned }
         }
         if !self.sudoersConfigured {
             Task.detached(priority: .utility) {

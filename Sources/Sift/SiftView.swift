@@ -54,6 +54,7 @@ final class SiftViewModel: ObservableObject {
         case sleep(SleepCommand, FuzzyMatch)
         case bookmark(BookmarkSearchResult)
         case screenshot(FuzzyMatch)
+        case systemInfo(SystemInfoCommand, FuzzyMatch)
 
         var id: String {
             switch self {
@@ -62,6 +63,7 @@ final class SiftViewModel: ObservableObject {
             case .sleep(let cmd, _): return cmd.id
             case .bookmark(let r): return "bookmark:" + r.id
             case .screenshot: return "cmd:screenshot"
+            case .systemInfo(let cmd, _): return cmd.id
             }
         }
 
@@ -72,6 +74,7 @@ final class SiftViewModel: ObservableObject {
             case .sleep(_, let m): return m.missed
             case .bookmark(let r): return r.match.missed
             case .screenshot(let m): return m.missed
+            case .systemInfo(_, let m): return m.missed
             }
         }
 
@@ -82,6 +85,7 @@ final class SiftViewModel: ObservableObject {
             case .sleep(_, let m): return !m.matched.isEmpty
             case .bookmark(let r): return !r.match.matched.isEmpty
             case .screenshot(let m): return !m.matched.isEmpty
+            case .systemInfo(_, let m): return !m.matched.isEmpty
             }
         }
 
@@ -92,6 +96,7 @@ final class SiftViewModel: ObservableObject {
             case .sleep(_, let m): return m.score
             case .bookmark(let r): return r.match.score
             case .screenshot(let m): return m.score
+            case .systemInfo(_, let m): return m.score
             }
         }
 
@@ -102,6 +107,7 @@ final class SiftViewModel: ObservableObject {
             case .sleep(let s, _): return s.name
             case .bookmark(let r): return r.displayName
             case .screenshot: return "Screenshot region"
+            case .systemInfo(let cmd, _): return cmd.name
             }
         }
 
@@ -109,6 +115,7 @@ final class SiftViewModel: ObservableObject {
             switch self {
             case .sleep: return 4
             case .screenshot: return 4
+            case .systemInfo: return 4
             case .app: return 3
             case .device: return 2
             case .bookmark: return 1
@@ -122,6 +129,7 @@ final class SiftViewModel: ObservableObject {
             case .sleep(_, let m): return m.matched
             case .bookmark(let r): return r.match.matched
             case .screenshot(let m): return m.matched
+            case .systemInfo(_, let m): return m.matched
             }
         }
     }
@@ -214,9 +222,10 @@ final class SiftViewModel: ObservableObject {
             return
         }
         lastIndexScanAt = Date()
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .utility) { [weak self] in
             let scanned = AppIndex.scan(directories: AppIndex.defaultSearchPaths)
-            await MainActor.run {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 self.allApps = scanned
                 self.rebuildSearchableApps()
                 AppIconCache.shared.warm(paths: scanned.map { $0.path })
@@ -423,12 +432,20 @@ final class SiftViewModel: ObservableObject {
             screenshotMatches = []
         }
 
+        let systemInfoMatches: [(SystemInfoCommand, FuzzyMatch)] = FuzzyMatcher.search(
+            value,
+            in: SystemInfoCommand.available(),
+            name: { $0.name },
+            boost: { _ in 60 }
+        )
+
         var merged: [Result] = []
         merged.append(contentsOf: appMatches.map { Result.app($0.0, $0.1) })
         merged.append(contentsOf: bookmarkResults.map { Result.bookmark($0) })
         merged.append(contentsOf: deviceMatches.map { Result.device($0.0, $0.1) })
         merged.append(contentsOf: sleepMatches.map { Result.sleep($0.0, $0.1) })
         merged.append(contentsOf: screenshotMatches.map { Result.screenshot($0) })
+        merged.append(contentsOf: systemInfoMatches.map { Result.systemInfo($0.0, $0.1) })
 
         merged.sort { a, b in
             if a.matchedInPrimary != b.matchedInPrimary {
@@ -466,6 +483,7 @@ final class SiftViewModel: ObservableObject {
         case .sleep(let cmd, _): return cmd.name
         case .bookmark(let bookmarkResult): return bookmarkResult.displayName
         case .screenshot: return "Screenshot region"
+        case .systemInfo(let cmd, _): return cmd.name
         }
     }
 
@@ -696,6 +714,8 @@ final class SiftViewModel: ObservableObject {
             DispatchQueue.main.async {
                 ScreenshotController.shared.captureRegion()
             }
+        case .systemInfo:
+            break
         }
     }
 
@@ -1095,6 +1115,15 @@ struct ResultRow: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color.accentColor)
             }
+        case .systemInfo(let cmd, _):
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.white.opacity(0.07))
+                    .frame(width: 32, height: 32)
+                Image(systemName: cmd.systemImage)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
         }
     }
 
@@ -1153,6 +1182,13 @@ struct ResultRow: View {
                 .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(Color.accentColor.opacity(0.85))
+        case .systemInfo(let cmd, _):
+            if let value = cmd.trailingValue {
+                Text(value)
+                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(1)
+            }
         }
     }
 
