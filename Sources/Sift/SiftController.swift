@@ -9,8 +9,6 @@ final class SiftController {
     private var backdrop: BackdropWindow?
     private let viewModel: SiftViewModel
 
-    private var confettiWindows: [ConfettiWindow] = []
-
     init(store: Store, onOpenSettings: @escaping () -> Void = {}) {
         self.store = store
         self.viewModel = SiftViewModel(store: store)
@@ -20,29 +18,6 @@ final class SiftController {
         viewModel.onOpenSettings = { [weak self] in
             self?.hide()
             onOpenSettings()
-        }
-        viewModel.onLogoTap = { [weak self] in
-            self?.triggerConfetti()
-        }
-    }
-
-    private func triggerConfetti() {
-        guard let panel = panel, panel.isVisible, let screen = panel.screen else { return }
-        let panelFrame = panel.frame
-        let screenFrame = screen.frame
-        let logoCocoaX = panelFrame.minX + 32
-        let logoCocoaY = panelFrame.maxY - 26
-        let swiftX = logoCocoaX - screenFrame.minX
-        let swiftY = screenFrame.maxY - logoCocoaY
-
-        let win = ConfettiWindow(
-            screenFrame: screenFrame,
-            origin: CGPoint(x: swiftX, y: swiftY),
-            seed: UInt64.random(in: 0..<UInt64.max)
-        )
-        confettiWindows.append(win)
-        win.onDismiss = { [weak self, weak win] in
-            self?.confettiWindows.removeAll { $0 === win }
         }
     }
 
@@ -65,7 +40,7 @@ final class SiftController {
         let config = store.load()
         let screen = PanelPlacement.activeScreen()
         if let screen, config.backdropEnabled {
-            PanelPlacement.presentBackdrop(on: screen, intensity: config.backdropIntensity, psychedelic: config.psychedelicEnabled, psychedelicIntensity: config.psychedelicIntensity, disabledPsychedelicEffects: config.disabledPsychedelicEffects, existing: &backdrop)
+            PanelPlacement.presentBackdrop(on: screen, intensity: config.backdropIntensity, existing: &backdrop)
         }
         positionPanel(panel)
         panel.makeKeyAndOrderFront(nil)

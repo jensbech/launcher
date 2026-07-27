@@ -730,12 +730,6 @@ final class SiftViewModel: ObservableObject {
         onOpenSettings?()
     }
 
-    var onLogoTap: (() -> Void)?
-
-    func tapLogo() {
-        onLogoTap?()
-    }
-
     private func openURL(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
         DispatchQueue.global(qos: .userInitiated).async {
@@ -827,7 +821,6 @@ struct SiftView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                SiftLogoButton(onTap: { viewModel.tapLogo() })
                 SearchField(
                     text: Binding(get: { viewModel.query }, set: { viewModel.updateQuery($0) }),
                     focusToken: viewModel.focusToken,
@@ -1349,31 +1342,6 @@ private struct BookmarkLeadingIcon: View {
             }
         }
         .onAppear { faviconCache.requestIcon(for: url) }
-    }
-}
-
-private struct SiftLogoButton: View {
-    let onTap: () -> Void
-    @State private var hover = false
-    @State private var press = false
-
-    var body: some View {
-        Button {
-            press = true
-            onTap()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { press = false }
-        } label: {
-            SiftMark(size: 20, color: Color.ink(hover ? 1 : 0.92))
-                .scaleEffect(press ? 0.82 : (hover ? 1.1 : 1.0))
-                .rotationEffect(.degrees(press ? 18 : 0))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusable(false)
-        .onHover { hover = $0 }
-        .help("✨")
-        .animation(.spring(response: 0.18, dampingFraction: 0.55), value: press)
-        .animation(.easeOut(duration: 0.12), value: hover)
     }
 }
 

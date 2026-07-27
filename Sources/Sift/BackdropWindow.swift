@@ -4,19 +4,11 @@ import SwiftUI
 final class BackdropWindow: NSWindow {
     private let visualView: NSVisualEffectView
     private let dimView: NSView
-    private var psychedelicHost: NSHostingView<PsychedelicView>?
-    private var currentEffect: PsychedelicEffect?
     private(set) var intensity: Double
-    private(set) var psychedelic: Bool
-    private(set) var psychedelicIntensity: Double
-    private(set) var disabledPsychedelicEffects: Set<String>
     private(set) var screenFrame: NSRect
 
-    init(screenFrame: NSRect, intensity: Double, psychedelic: Bool, psychedelicIntensity: Double, disabledPsychedelicEffects: Set<String> = []) {
+    init(screenFrame: NSRect, intensity: Double) {
         self.intensity = max(0, min(1, intensity))
-        self.psychedelic = psychedelic
-        self.psychedelicIntensity = max(0, min(1, psychedelicIntensity))
-        self.disabledPsychedelicEffects = disabledPsychedelicEffects
         self.screenFrame = screenFrame
 
         let bounds = NSRect(origin: .zero, size: screenFrame.size)
@@ -49,7 +41,6 @@ final class BackdropWindow: NSWindow {
         contentView = visual
 
         applyIntensity()
-        if psychedelic { installPsychedelic() }
     }
 
     func setIntensity(_ value: Double) {
@@ -57,72 +48,9 @@ final class BackdropWindow: NSWindow {
         applyIntensity()
     }
 
-    func setPsychedelicIntensity(_ value: Double) {
-        psychedelicIntensity = max(0, min(1, value))
-        if let host = psychedelicHost, let effect = currentEffect {
-            host.rootView = PsychedelicView(intensity: psychedelicIntensity, effect: effect)
-        }
-    }
-
     func setScreenFrame(_ frame: NSRect) {
         screenFrame = frame
         setFrame(frame, display: false)
-    }
-
-    func setPsychedelicEnabled(_ enabled: Bool, intensity: Double, disabledKeys: Set<String>) {
-        psychedelic = enabled
-        psychedelicIntensity = max(0, min(1, intensity))
-        disabledPsychedelicEffects = disabledKeys
-        if enabled {
-            if psychedelicHost == nil {
-                installPsychedelic()
-            } else {
-                cyclePsychedelicEffect(disabledKeys: disabledKeys)
-            }
-        } else {
-            removePsychedelic()
-        }
-    }
-
-    func suspendPsychedelicEffect() {
-        guard psychedelic else { return }
-        removePsychedelic()
-    }
-
-    func cyclePsychedelicEffect(disabledKeys: Set<String>) {
-        disabledPsychedelicEffects = disabledKeys
-        guard let effect = PsychedelicEffect.random(excluding: disabledKeys) else {
-            removePsychedelic()
-            return
-        }
-        currentEffect = effect
-        let view = PsychedelicView(intensity: psychedelicIntensity, effect: effect)
-        if let host = psychedelicHost {
-            host.rootView = view
-            host.frame = visualView.bounds
-        } else {
-            let host = NSHostingView(rootView: view)
-            host.frame = visualView.bounds
-            host.autoresizingMask = [.width, .height]
-            visualView.addSubview(host)
-            psychedelicHost = host
-        }
-    }
-
-    private func installPsychedelic() {
-        guard let effect = PsychedelicEffect.random(excluding: disabledPsychedelicEffects) else { return }
-        currentEffect = effect
-        let host = NSHostingView(rootView: PsychedelicView(intensity: psychedelicIntensity, effect: effect))
-        host.frame = visualView.bounds
-        host.autoresizingMask = [.width, .height]
-        visualView.addSubview(host)
-        psychedelicHost = host
-    }
-
-    private func removePsychedelic() {
-        psychedelicHost?.removeFromSuperview()
-        psychedelicHost = nil
-        currentEffect = nil
     }
 
     private func applyIntensity() {

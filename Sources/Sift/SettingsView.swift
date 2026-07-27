@@ -14,9 +14,6 @@ final class SettingsViewModel: ObservableObject {
     @Published var selectedScreenContext: String? = nil
     @Published var backdropEnabled: Bool = false
     @Published var backdropIntensity: Double = Config.defaultBackdropIntensity
-    @Published var psychedelicEnabled: Bool = false
-    @Published var psychedelicIntensity: Double = Config.defaultPsychedelicIntensity
-    @Published var disabledPsychedelicEffects: Set<String> = []
     @Published var includeZenBookmarks: Bool = true
     @Published var includeFirefoxBookmarks: Bool = false
     @Published var managedBookmarks: [Bookmark] = []
@@ -60,9 +57,6 @@ final class SettingsViewModel: ObservableObject {
         self.connectedScreenNames = NSScreen.screens.compactMap { $0.localizedName }
         self.backdropEnabled = config.backdropEnabled
         self.backdropIntensity = config.backdropIntensity
-        self.psychedelicEnabled = config.psychedelicEnabled
-        self.psychedelicIntensity = config.psychedelicIntensity
-        self.disabledPsychedelicEffects = config.disabledPsychedelicEffects
         self.includeZenBookmarks = config.includeZenBookmarks
         self.includeFirefoxBookmarks = config.includeFirefoxBookmarks
         self.launcherHotkey = config.launcherHotkey
@@ -231,25 +225,6 @@ final class SettingsViewModel: ObservableObject {
         persistDebounced()
     }
 
-    func setPsychedelicEnabled(_ value: Bool) {
-        psychedelicEnabled = value
-        persist()
-    }
-
-    func setPsychedelicIntensity(_ value: Double) {
-        psychedelicIntensity = max(0, min(1, value))
-        persistDebounced()
-    }
-
-    func setPsychedelicEffectEnabled(_ key: String, enabled: Bool) {
-        if enabled {
-            disabledPsychedelicEffects.remove(key)
-        } else {
-            disabledPsychedelicEffects.insert(key)
-        }
-        persist()
-    }
-
     func setIncludeZenBookmarks(_ value: Bool) {
         includeZenBookmarks = value
         persist()
@@ -316,9 +291,6 @@ final class SettingsViewModel: ObservableObject {
             perScreenPanelPositions: perScreenPanelPositions,
             backdropEnabled: backdropEnabled,
             backdropIntensity: backdropIntensity,
-            psychedelicEnabled: psychedelicEnabled,
-            psychedelicIntensity: psychedelicIntensity,
-            disabledPsychedelicEffects: disabledPsychedelicEffects,
             includeZenBookmarks: includeZenBookmarks,
             includeFirefoxBookmarks: includeFirefoxBookmarks,
             launcherHotkey: launcherHotkey,
@@ -1037,22 +1009,6 @@ private struct GeneralPane: View {
                     IntensityRow(viewModel: viewModel)
                         .opacity(viewModel.backdropEnabled ? 1 : 0.45)
                         .disabled(!viewModel.backdropEnabled)
-
-                    Rectangle()
-                        .fill(Palette.hairline)
-                        .frame(height: 1)
-
-                    PsychedelicToggleRow(viewModel: viewModel)
-                        .opacity(viewModel.backdropEnabled ? 1 : 0.45)
-                        .disabled(!viewModel.backdropEnabled)
-
-                    PsychedelicIntensityRow(viewModel: viewModel)
-                        .opacity(viewModel.backdropEnabled && viewModel.psychedelicEnabled ? 1 : 0.45)
-                        .disabled(!viewModel.backdropEnabled || !viewModel.psychedelicEnabled)
-
-                    PsychedelicEffectsRow(viewModel: viewModel)
-                        .opacity(viewModel.backdropEnabled && viewModel.psychedelicEnabled ? 1 : 0.45)
-                        .disabled(!viewModel.backdropEnabled || !viewModel.psychedelicEnabled)
                 }
             }
         }
@@ -1105,194 +1061,6 @@ private struct ThemeModeRow: View {
                 .foregroundStyle(Palette.subtle)
         }
         .animation(.easeOut(duration: 0.15), value: viewModel.themeMode)
-    }
-}
-
-private struct PsychedelicToggleRow: View {
-    @ObservedObject var viewModel: SettingsViewModel
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            PsychedelicPreviewChip()
-                .frame(width: 44, height: 44)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text("Psychedelic mode")
-                        .font(.system(size: 13.5, weight: .medium))
-                        .foregroundStyle(Color.ink(1))
-                    Text("RANDOM")
-                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                        .tracking(1.0)
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            Capsule().fill(
-                                LinearGradient(
-                                    colors: [Color(red: 1, green: 0.4, blue: 0.7), Color(red: 0.5, green: 0.9, blue: 1)],
-                                    startPoint: .leading, endPoint: .trailing
-                                )
-                            )
-                        )
-                }
-                Text("Each time Sift opens, a different trip plays across the backdrop — waves, plasma, aurora, starfield, matrix, tunnel, spirograph, lightning, CRT, vortex, confetti, grid floor, phyllotaxis, pixel sort, fireflies, sunburst, EKG, bouncing balls, sonar, or hex cells.")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Palette.subtle)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 12)
-            Toggle("", isOn: Binding(
-                get: { viewModel.psychedelicEnabled },
-                set: { viewModel.setPsychedelicEnabled($0) }
-            ))
-            .toggleStyle(.switch)
-            .labelsHidden()
-            .controlSize(.small)
-        }
-    }
-}
-
-private struct PsychedelicIntensityRow: View {
-    @ObservedObject var viewModel: SettingsViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("PSYCHEDELIC INTENSITY")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .tracking(2.0)
-                    .foregroundStyle(Palette.muted)
-                Spacer()
-                Text("\(Int(viewModel.psychedelicIntensity * 100))%")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.ink(1))
-                    .monospacedDigit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.ink(0.06))
-                    )
-            }
-
-            HStack(spacing: 10) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.dim)
-                Slider(
-                    value: Binding(
-                        get: { viewModel.psychedelicIntensity },
-                        set: { viewModel.setPsychedelicIntensity($0) }
-                    ),
-                    in: 0...1
-                )
-                Image(systemName: "sparkles")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.subtle)
-            }
-        }
-    }
-}
-
-private struct PsychedelicEffectsRow: View {
-    @ObservedObject var viewModel: SettingsViewModel
-
-    private let columns = [GridItem(.adaptive(minimum: 130), spacing: 6)]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("EFFECTS IN ROTATION")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .tracking(2.0)
-                    .foregroundStyle(Palette.muted)
-                Spacer()
-                Text("\(PsychedelicEffect.allCases.count - viewModel.disabledPsychedelicEffects.count)/\(PsychedelicEffect.allCases.count)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.ink(1))
-                    .monospacedDigit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.ink(0.06))
-                    )
-            }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-                ForEach(PsychedelicEffect.allCases, id: \.key) { effect in
-                    let enabled = !viewModel.disabledPsychedelicEffects.contains(effect.key)
-                    Button {
-                        viewModel.setPsychedelicEffectEnabled(effect.key, enabled: !enabled)
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: enabled ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(enabled ? Color.accentColor : Palette.dim)
-                            Text(effect.displayName)
-                                .font(.system(size: 12))
-                                .foregroundStyle(enabled ? Color.ink(1) : Palette.subtle)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.ink(enabled ? 0.05 : 0.02))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color.ink(enabled ? 0.08 : 0.04), lineWidth: 1)
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            if viewModel.disabledPsychedelicEffects.count >= PsychedelicEffect.allCases.count {
-                Text("All effects disabled — backdrop will skip the psychedelic layer.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Palette.subtle)
-            }
-        }
-    }
-}
-
-private struct PsychedelicPreviewChip: View {
-    private static let lineCount = 7
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { ctx in
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            ZStack {
-                Color.black
-                Canvas { gc, size in
-                    for i in 0..<Self.lineCount {
-                        var path = Path()
-                        let baseY = (Double(i) + 0.5) / Double(Self.lineCount) * size.height
-                        let phase = t * (0.6 + Double(i % 3) * 0.3) + Double(i) * 0.7
-                        let amp = size.height * 0.08
-                        let steps = 36
-                        for s in 0...steps {
-                            let u = Double(s) / Double(steps)
-                            let x = size.width * u
-                            let y = baseY + sin(u * 4 * .pi + phase) * amp + sin(u * 8 * .pi - phase * 0.6) * amp * 0.35
-                            if s == 0 { path.move(to: CGPoint(x: x, y: y)) }
-                            else { path.addLine(to: CGPoint(x: x, y: y)) }
-                        }
-                        let hue = ((Double(i) / Double(Self.lineCount)) + t * 0.1).truncatingRemainder(dividingBy: 1)
-                        let color = Color(hue: hue, saturation: 0.9, brightness: 1.0)
-                        gc.stroke(path, with: .color(color.opacity(0.9)), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
-                    }
-                }
-                .blendMode(.plusLighter)
-            }
-            .saturation(1.3)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.ink(0.18), lineWidth: 1)
-        )
     }
 }
 

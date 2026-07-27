@@ -26,16 +26,15 @@ enum PanelPlacement {
     }
 
     @MainActor
-    static func presentBackdrop(on screen: NSScreen, intensity: Double, psychedelic: Bool, psychedelicIntensity: Double, disabledPsychedelicEffects: Set<String> = [], existing: inout BackdropWindow?) {
+    static func presentBackdrop(on screen: NSScreen, intensity: Double, existing: inout BackdropWindow?) {
         let window: BackdropWindow
         if let cached = existing, cached.screenFrame == screen.frame {
             window = cached
             window.setIntensity(intensity)
-            window.setPsychedelicEnabled(psychedelic, intensity: psychedelicIntensity, disabledKeys: disabledPsychedelicEffects)
             window.alphaValue = 0
         } else {
             existing?.orderOut(nil)
-            window = BackdropWindow(screenFrame: screen.frame, intensity: intensity, psychedelic: psychedelic, psychedelicIntensity: psychedelicIntensity, disabledPsychedelicEffects: disabledPsychedelicEffects)
+            window = BackdropWindow(screenFrame: screen.frame, intensity: intensity)
             window.setFrame(screen.frame, display: false)
         }
         window.orderFront(nil)
@@ -55,7 +54,6 @@ enum PanelPlacement {
         }, completionHandler: { [weak window] in
             guard let window, window.alphaValue == 0 else { return }
             window.orderOut(nil)
-            window.suspendPsychedelicEffect()
         })
     }
 }

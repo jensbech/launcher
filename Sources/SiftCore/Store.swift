@@ -142,9 +142,6 @@ public struct Config: Codable, Equatable {
     public var perScreenPanelPositions: [String: PanelPosition]
     public var backdropEnabled: Bool
     public var backdropIntensity: Double
-    public var psychedelicEnabled: Bool
-    public var psychedelicIntensity: Double
-    public var disabledPsychedelicEffects: Set<String>
     public var includeZenBookmarks: Bool
     public var includeFirefoxBookmarks: Bool
     public var launcherHotkey: Hotkey
@@ -159,7 +156,6 @@ public struct Config: Codable, Equatable {
     public var themeMode: ThemeMode
 
     public static let defaultBackdropIntensity: Double = 0.6
-    public static let defaultPsychedelicIntensity: Double = 0.7
 
     public init(
         disabledBundleIDs: Set<String> = [],
@@ -168,9 +164,6 @@ public struct Config: Codable, Equatable {
         perScreenPanelPositions: [String: PanelPosition] = [:],
         backdropEnabled: Bool = false,
         backdropIntensity: Double = Config.defaultBackdropIntensity,
-        psychedelicEnabled: Bool = false,
-        psychedelicIntensity: Double = Config.defaultPsychedelicIntensity,
-        disabledPsychedelicEffects: Set<String> = [],
         includeZenBookmarks: Bool = true,
         includeFirefoxBookmarks: Bool = false,
         launcherHotkey: Hotkey = .defaultLauncher,
@@ -190,9 +183,6 @@ public struct Config: Codable, Equatable {
         self.perScreenPanelPositions = perScreenPanelPositions
         self.backdropEnabled = backdropEnabled
         self.backdropIntensity = max(0, min(1, backdropIntensity))
-        self.psychedelicEnabled = psychedelicEnabled
-        self.psychedelicIntensity = max(0, min(1, psychedelicIntensity))
-        self.disabledPsychedelicEffects = disabledPsychedelicEffects
         self.includeZenBookmarks = includeZenBookmarks
         self.includeFirefoxBookmarks = includeFirefoxBookmarks
         self.launcherHotkey = launcherHotkey
@@ -214,9 +204,6 @@ public struct Config: Codable, Equatable {
         case perScreenPanelPositions
         case backdropEnabled
         case backdropIntensity
-        case psychedelicEnabled
-        case psychedelicIntensity
-        case disabledPsychedelicEffects
         case includeZenBookmarks
         case includeFirefoxBookmarks
         case launcherHotkey
@@ -240,10 +227,6 @@ public struct Config: Codable, Equatable {
         self.backdropEnabled = try container.decodeIfPresent(Bool.self, forKey: .backdropEnabled) ?? false
         let rawIntensity = try container.decodeIfPresent(Double.self, forKey: .backdropIntensity) ?? Config.defaultBackdropIntensity
         self.backdropIntensity = max(0, min(1, rawIntensity))
-        self.psychedelicEnabled = try container.decodeIfPresent(Bool.self, forKey: .psychedelicEnabled) ?? false
-        let rawPsych = try container.decodeIfPresent(Double.self, forKey: .psychedelicIntensity) ?? Config.defaultPsychedelicIntensity
-        self.psychedelicIntensity = max(0, min(1, rawPsych))
-        self.disabledPsychedelicEffects = try container.decodeIfPresent(Set<String>.self, forKey: .disabledPsychedelicEffects) ?? []
         self.includeZenBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeZenBookmarks) ?? true
         self.includeFirefoxBookmarks = try container.decodeIfPresent(Bool.self, forKey: .includeFirefoxBookmarks) ?? false
         self.launcherHotkey = try container.decodeIfPresent(Hotkey.self, forKey: .launcherHotkey) ?? .defaultLauncher
