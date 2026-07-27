@@ -31,8 +31,6 @@ The strip is visible idle *and* during search, anchored to the bottom of the pan
 
 If you have a Local / Dev / Test / Prod (etc.) variant of the same URL, Sift collapses them into a single row and lets you expand with `→`:
 
-![Bookmark env group expanded into Local, Dev, Test, Prod variants](docs/env-bookmark.svg)
-
 Pressing `Enter` on the row launches the default variant (Prod-ish). Pressing `→` reveals all variants with their environment icons; pick one and `Enter` to open. `⌥C` copies the highlighted URL with a brief "COPIED" badge — works both on the row and on a specific variant inside the expanded view.
 
 ## Features
